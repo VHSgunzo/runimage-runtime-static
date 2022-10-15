@@ -25,7 +25,8 @@
  *
  **************************************************************************/
 
-#ident "RuntimeImage by VHSgunzo, vhsgunzo.github.io"
+#ident "Runtime for RuntimeImage by VHSgunzo, vhsgunzo.github.io"
+#define RUNTIME_VERSION "0.4.1"
 
 #define _GNU_SOURCE
 
@@ -217,8 +218,8 @@ print_help(const char *appimage_path)
 {
     // TODO: "--runtime-list                 List content from embedded filesystem image\n"
     fprintf(stderr,
-        "RuntimeImage by VHSgunzo\n"
-        "   RuntimeImage options:\n\n"
+        "Runtime for RuntimeImage v%s by VHSgunzo\n"
+        "   Runtime options:\n\n"
         "     --runtime-extract [<pattern>]  Extract content from embedded filesystem image\n"
         "                                     If pattern is passed, only extract matching files\n"
         "     --runtime-extract-and-run      Run the RuntimeImage afer extraction without\n"
@@ -231,6 +232,7 @@ print_help(const char *appimage_path)
         "     --runtime-portable-home        Create a portable home folder to use as $HOME\n"
         "     --runtime-portable-config      Create a portable config folder to use as\n"
         "                                     $XDG_CONFIG_HOME\n"
+        "     --runtime-version              Print version of Runtime\n"
         "\n"
         "Portable home:\n"
         "\n"
@@ -245,7 +247,7 @@ print_help(const char *appimage_path)
         "  and is neither moved nor renamed, the application contained inside this\n"
         "  RuntimeImage to store its data in this directory rather than in your home\n"
         "  directory\n"
-    , appimage_path);
+    , RUNTIME_VERSION, appimage_path);
 }
 
 void
@@ -758,13 +760,18 @@ int main(int argc, char *argv[]) {
         exit(status);
     }
 
+    if(arg && strcmp(arg,"runtime-version")==0) {
+        fprintf(stderr,"Version: %s\n", RUNTIME_VERSION);
+        exit(0);
+    }
+
     portable_option(arg, appimage_path, "home");
     portable_option(arg, appimage_path, "config");
 
     // If there is an argument starting with runtime- (but not runtime-mount which is handled further down)
     // then stop here and print an error message
     if((arg && strncmp(arg, "runtime-", 8) == 0) && (arg && strcmp(arg,"runtime-mount")!=0)) {
-        fprintf(stderr,"--%s is not yet implemented!\n", arg);
+        fprintf(stderr,"--%s is not yet implemented in version %s\n", arg, RUNTIME_VERSION);
         exit(1);
     }
 
@@ -922,12 +929,20 @@ int main(int argc, char *argv[]) {
             setenv( "OWD", cwd, 1 );
         }
 
-        char filename[mount_dir_size + 8]; /* enough for mount_dir + "/Run" */
-        strcpy (filename, mount_dir);
-        strcat (filename, "/Run");
+        char runfile[mount_dir_size + 5]; /* enough for mount_dir + "/Run" */
+        strcpy (runfile, mount_dir);
+        strcat (runfile, "/Run");
+
+        char static_bash[mount_dir_size + 13]; /* enough for mount_dir + "static/bash" */
+        strcpy (static_bash, mount_dir);
+        strcat (static_bash, "/static/bash");
+
+        for (int i = sizeof(real_argv); i>=2; i--)
+            real_argv[i] = real_argv[i-1];
+        real_argv[1] = runfile;
 
         /* TODO: Find a way to get the exit status and/or output of this */
-        execv (filename, real_argv);
+        execv(static_bash, real_argv);
         /* Error if we continue here */
         perror("execv error");
         exit(EXIT_EXECERROR);
