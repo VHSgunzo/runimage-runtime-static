@@ -26,7 +26,7 @@
  **************************************************************************/
 
 #ident "Runtime for RuntimeImage by VHSgunzo, vhsgunzo.github.io"
-#define RUNTIME_VERSION "0.4.2"
+#define RUNTIME_VERSION "0.4.3"
 
 #define _GNU_SOURCE
 
@@ -937,7 +937,7 @@ int main(int argc, char *argv[]) {
         strcpy (static_bash, mount_dir);
         strcat (static_bash, "/static/bash");
 
-        for (int i = sizeof(real_argv); i>=2; i--)
+        for (int i = argc+1; i>=2; i--)
             real_argv[i] = real_argv[i-1];
         real_argv[1] = runfile;
 
