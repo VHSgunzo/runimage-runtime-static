@@ -1,32 +1,5 @@
-/**************************************************************************
- *
- * Copyright (c) 2004-18 Simon Peter
- * Portions Copyright (c) 2007 Alexander Larsson
- *
- * All Rights Reserved.
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
- *
- **************************************************************************/
-
 #ident "Runtime for RuntimeImage by VHSgunzo, vhsgunzo.github.io"
-#define RUNTIME_VERSION "0.4.3"
+#define RUNTIME_VERSION "0.4.4"
 
 #define _GNU_SOURCE
 
@@ -214,7 +187,7 @@ mkdir_p(const char* const path)
 }
 
 void
-print_help(const char *appimage_path)
+print_help(const char *runimage_path)
 {
     // TODO: "--runtime-list                 List content from embedded filesystem image\n"
     fprintf(stderr,
@@ -247,11 +220,11 @@ print_help(const char *appimage_path)
         "  and is neither moved nor renamed, the application contained inside this\n"
         "  RuntimeImage to store its data in this directory rather than in your home\n"
         "  directory\n"
-    , RUNTIME_VERSION, appimage_path);
+    , RUNTIME_VERSION, runimage_path);
 }
 
 void
-portable_option(const char *arg, const char *appimage_path, const char *name)
+portable_option(const char *arg, const char *runimage_path, const char *name)
 {
     char option[32];
     sprintf(option, "runtime-portable-%s", name);
@@ -260,9 +233,9 @@ portable_option(const char *arg, const char *appimage_path, const char *name)
         char portable_dir[PATH_MAX];
         char fullpath[PATH_MAX];
 
-        ssize_t length = readlink(appimage_path, fullpath, sizeof(fullpath));
+        ssize_t length = readlink(runimage_path, fullpath, sizeof(fullpath));
         if (length < 0) {
-            fprintf(stderr, "Error getting realpath for %s\n", appimage_path);
+            fprintf(stderr, "Error getting realpath for %s\n", runimage_path);
             exit(EXIT_FAILURE);
         }
         fullpath[length] = '\0';
@@ -277,7 +250,7 @@ portable_option(const char *arg, const char *appimage_path, const char *name)
     }
 }
 
-bool extract_appimage(const char* const appimage_path, const char* const _prefix, const char* const _pattern, const bool overwrite, const bool verbose) {
+bool extract_appimage(const char* const runimage_path, const char* const _prefix, const char* const _pattern, const bool overwrite, const bool verbose) {
     sqfs_err err = SQFS_OK;
     sqfs_traverse trv;
     sqfs fs;
@@ -299,7 +272,7 @@ bool extract_appimage(const char* const appimage_path, const char* const _prefix
         }
     }
 
-    if ((err = sqfs_open_image(&fs, appimage_path, (size_t) fs_offset))) {
+    if ((err = sqfs_open_image(&fs, runimage_path, (size_t) fs_offset))) {
         fprintf(stderr, "Failed to open squashfs image\n");
         return false;
     };
@@ -529,7 +502,7 @@ build_mount_point(char* mount_dir, const char* const argv0, char const* const te
 }
 
 int main(int argc, char *argv[]) {
-    char appimage_path[PATH_MAX];
+    char runimage_path[PATH_MAX];
     char argv0_path[PATH_MAX];
     char * arg;
 
@@ -540,10 +513,10 @@ int main(int argc, char *argv[]) {
      * functionality specifically for builds used by appimaged.
      */
     if (getenv("TARGET_APPIMAGE") == NULL) {
-        strcpy(appimage_path, "/proc/self/exe");
+        strcpy(runimage_path, "/proc/self/exe");
         strcpy(argv0_path, argv[0]);
     } else {
-        strcpy(appimage_path, getenv("TARGET_APPIMAGE"));
+        strcpy(runimage_path, getenv("TARGET_APPIMAGE"));
         strcpy(argv0_path, getenv("TARGET_APPIMAGE"));
 
 #ifdef ENABLE_SETPROCTITLE
@@ -591,13 +564,13 @@ int main(int argc, char *argv[]) {
             strcpy(temp_base, getenv("TMPDIR"));
     }
 
-    fs_offset = appimage_get_elf_size(appimage_path);
+    fs_offset = appimage_get_elf_size(runimage_path);
     char sfs_offset[snprintf(NULL, 0, "%lu", fs_offset)];
     sprintf(sfs_offset, "%lu", fs_offset);
 
     // error check
     if (fs_offset < 0) {
-        fprintf(stderr, "Failed to get fs offset for %s\n", appimage_path);
+        fprintf(stderr, "Failed to get fs offset for %s\n", runimage_path);
         exit(EXIT_EXECERROR);
     }
 
@@ -607,9 +580,9 @@ int main(int argc, char *argv[]) {
     if(arg && strcmp(arg,"runtime-help")==0) {
         char fullpath[PATH_MAX];
 
-        ssize_t length = readlink(appimage_path, fullpath, sizeof(fullpath));
+        ssize_t length = readlink(runimage_path, fullpath, sizeof(fullpath));
         if (length < 0) {
-            fprintf(stderr, "Error getting realpath for %s\n", appimage_path);
+            fprintf(stderr, "Error getting realpath for %s\n", runimage_path);
             exit(EXIT_EXECERROR);
         }
         fullpath[length] = '\0';
@@ -641,7 +614,7 @@ int main(int argc, char *argv[]) {
             exit(1);
         }
 
-        if (!extract_appimage(appimage_path, "RunDir/", pattern, true, true)) {
+        if (!extract_appimage(runimage_path, "RunDir/", pattern, true, true)) {
             exit(1);
         }
 
@@ -653,14 +626,14 @@ int main(int argc, char *argv[]) {
 
     if(getenv("TARGET_APPIMAGE") == NULL) {
         // If we are operating on this file itself
-        ssize_t len = readlink(appimage_path, fullpath, sizeof(fullpath));
+        ssize_t len = readlink(runimage_path, fullpath, sizeof(fullpath));
         if (len < 0) {
             perror("Failed to obtain absolute path");
             exit(EXIT_EXECERROR);
         }
         fullpath[len] = '\0';
     } else {
-        char* abspath = realpath(appimage_path, NULL);
+        char* abspath = realpath(runimage_path, NULL);
         if (abspath == NULL) {
             perror("Failed to obtain absolute path");
             exit(EXIT_EXECERROR);
@@ -675,7 +648,7 @@ int main(int argc, char *argv[]) {
         // calculate MD5 hash of file, and use it to make extracted directory name "content-aware"
         // see https://github.com/AppImage/AppImageKit/issues/841 for more information
         {
-            FILE* f = fopen(appimage_path, "rb");
+            FILE* f = fopen(runimage_path, "rb");
             if (f == NULL) {
                 perror("Failed to open RuntimeImage file");
                 exit(EXIT_EXECERROR);
@@ -699,7 +672,7 @@ int main(int argc, char *argv[]) {
 
         const bool verbose = (getenv("VERBOSE") != NULL);
 
-        if (!extract_appimage(appimage_path, prefix, NULL, false, verbose)) {
+        if (!extract_appimage(runimage_path, prefix, NULL, false, verbose)) {
             fprintf(stderr, "Failed to extract RuntimeImage\n");
             exit(EXIT_EXECERROR);
         }
@@ -710,16 +683,20 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "fork() failed: %s\n", strerror(error));
             exit(EXIT_EXECERROR);
         } else if (pid == 0) {
-            const char apprun_fname[] = "Run";
-            char* apprun_path = malloc(strlen(prefix) + 1 + strlen(apprun_fname) + 1);
-            strcpy(apprun_path, prefix);
-            strcat(apprun_path, "/");
-            strcat(apprun_path, apprun_fname);
+            const char run_fname[] = "/Run";
+            char* runfile_path = malloc(strlen(prefix) + 1 + strlen(run_fname) + 1);
+            strcpy(runfile_path, prefix);
+            strcat(runfile_path, run_fname);
+
+            const char static_bash_fname[] = "/static/bash";
+            char* static_bash_path = malloc(strlen(prefix) + 1 + strlen(static_bash_fname) + 1);
+            strcpy(static_bash_path, prefix);
+            strcat(static_bash_path, static_bash_fname);
 
             // create copy of argument list without the --runtime-extract-and-run parameter
             char* new_argv[argc];
             int new_argc = 0;
-            new_argv[new_argc++] = strdup(apprun_path);
+            new_argv[new_argc++] = strdup(runfile_path);
             for (int i = 1; i < argc; ++i) {
                 if (strcmp(argv[i], "--runtime-extract-and-run") != 0) {
                     new_argv[new_argc++] = strdup(argv[i]);
@@ -727,18 +704,24 @@ int main(int argc, char *argv[]) {
             }
             new_argv[new_argc] = NULL;
 
-            /* Setting some environment variables that the app "inside" might use */
-            setenv("RUNIMAGE", fullpath, 1);
-            setenv("ARGV0", argv0_path, 1);
-            setenv("RUNDIR", prefix, 1);
-            setenv("RUNOFFSET", sfs_offset, 1);
+            // add runfile_path to new_argv
+            for (int i = new_argc+1; i>=2; i--)
+                new_argv[i] = new_argv[i-1];
+            new_argv[1] = runfile_path;
 
-            execv(apprun_path, new_argv);
+            /* Setting some environment variables that the app "inside" might use */
+            setenv("RUNDIR", prefix, 1);
+            // setenv("RUNIMAGE", fullpath, 1);
+            // setenv("ARGV0", argv0_path, 1);
+            // setenv("RUNOFFSET", sfs_offset, 1);
+
+            execv(static_bash_path, new_argv);
 
             int error = errno;
-            fprintf(stderr, "Failed to run %s: %s\n", apprun_path, strerror(error));
+            fprintf(stderr, "Failed to run %s: %s\n", static_bash_path, strerror(error));
 
-            free(apprun_path);
+            free(runfile_path);
+            free(static_bash_path);
             exit(EXIT_EXECERROR);
         }
 
@@ -765,8 +748,8 @@ int main(int argc, char *argv[]) {
         exit(0);
     }
 
-    portable_option(arg, appimage_path, "home");
-    portable_option(arg, appimage_path, "config");
+    portable_option(arg, runimage_path, "home");
+    portable_option(arg, runimage_path, "config");
 
     // If there is an argument starting with runtime- (but not runtime-mount which is handled further down)
     // then stop here and print an error message
@@ -825,7 +808,7 @@ int main(int argc, char *argv[]) {
         /* close read pipe */
         close (keepalive_pipe[0]);
 
-        char *dir = realpath(appimage_path, NULL );
+        char *dir = realpath(runimage_path, NULL );
 
         char options[100];
         sprintf(options, "ro,offset=%lu", fs_offset);
