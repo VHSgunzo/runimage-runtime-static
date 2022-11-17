@@ -1,5 +1,5 @@
-#ident "Runtime for RuntimeImage by VHSgunzo, vhsgunzo.github.io"
-#define RUNTIME_VERSION "0.4.4"
+#ident "Runtime for RunImage by VHSgunzo, vhsgunzo.github.io"
+#define RUNTIME_VERSION "0.4.5"
 
 #define _GNU_SOURCE
 
@@ -191,11 +191,11 @@ print_help(const char *runimage_path)
 {
     // TODO: "--runtime-list                 List content from embedded filesystem image\n"
     fprintf(stderr,
-        "Runtime for RuntimeImage v%s by VHSgunzo\n"
+        "Runtime for RunImage v%s by VHSgunzo\n"
         "   Runtime options:\n\n"
         "     --runtime-extract [<pattern>]  Extract content from embedded filesystem image\n"
         "                                     If pattern is passed, only extract matching files\n"
-        "     --runtime-extract-and-run      Run the RuntimeImage afer extraction without\n"
+        "     --runtime-extract-and-run      Run the RunImage afer extraction without\n"
         "                                     using FUSE\n"
         "     --runtime-help                 Print this help\n"
         "     --runtime-mount                Mount embedded filesystem image and print\n"
@@ -209,16 +209,16 @@ print_help(const char *runimage_path)
         "\n"
         "Portable home:\n"
         "\n"
-        "  If you would like the application contained inside this RuntimeImage to store its\n"
-        "  data alongside this RuntimeImage rather than in your home directory, then you can\n"
+        "  If you would like the application contained inside this RunImage to store its\n"
+        "  data alongside this RunImage rather than in your home directory, then you can\n"
         "  place a directory named\n"
         "\n"
         "  %s.home\n"
         "\n"
-        "  Or you can invoke this RuntimeImage with the --runtime-portable-home option,\n"
+        "  Or you can invoke this RunImage with the --runtime-portable-home option,\n"
         "  which will create this directory for you. As long as the directory exists\n"
         "  and is neither moved nor renamed, the application contained inside this\n"
-        "  RuntimeImage to store its data in this directory rather than in your home\n"
+        "  RunImage to store its data in this directory rather than in your home\n"
         "  directory\n"
     , RUNTIME_VERSION, runimage_path);
 }
@@ -650,7 +650,7 @@ int main(int argc, char *argv[]) {
         {
             FILE* f = fopen(runimage_path, "rb");
             if (f == NULL) {
-                perror("Failed to open RuntimeImage file");
+                perror("Failed to open RunImage file");
                 exit(EXIT_EXECERROR);
             }
 
@@ -673,7 +673,7 @@ int main(int argc, char *argv[]) {
         const bool verbose = (getenv("VERBOSE") != NULL);
 
         if (!extract_appimage(runimage_path, prefix, NULL, false, verbose)) {
-            fprintf(stderr, "Failed to extract RuntimeImage\n");
+            fprintf(stderr, "Failed to extract RunImage\n");
             exit(EXIT_EXECERROR);
         }
 
@@ -761,8 +761,8 @@ int main(int argc, char *argv[]) {
     if (access ("/dev/fuse", F_OK) < 0)        /* exit if libfuse cannot be used */
       {
         dprintf (2, "%s: failed to utilize FUSE during startup\n", argv[0]);
-        char *title = "Cannot mount RuntimeImage, please check your FUSE setup.";
-        char *body  = "You might still be able to extract the contents of this RuntimeImage \n"
+        char *title = "Cannot mount RunImage, please check your FUSE setup.";
+        char *body  = "You might still be able to extract the contents of this RunImage \n"
                       "if you run it with the --runtime-extract option. \n"
                       "See https://github.com/AppImage/AppImageKit/wiki/FUSE \n"
                       "for more information";
@@ -822,8 +822,8 @@ int main(int argc, char *argv[]) {
         if(0 != fusefs_main (5, child_argv, fuse_mounted)){
             char *title;
             char *body;
-            title = "Cannot mount RuntimeImage, please check your FUSE setup.";
-            body = "You might still be able to extract the contents of this RuntimeImage \n"
+            title = "Cannot mount RunImage, please check your FUSE setup.";
+            body = "You might still be able to extract the contents of this RunImage \n"
             "if you run it with the --runtime-extract option. \n"
             "See https://github.com/AppImage/AppImageKit/wiki/FUSE \n"
             "for more information";
