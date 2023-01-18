@@ -1,5 +1,5 @@
 #ident "Runtime for RunImage by VHSgunzo, vhsgunzo.github.io"
-#define RUNTIME_VERSION "0.4.5"
+#define RUNTIME_VERSION "0.4.6"
 
 #define _GNU_SOURCE
 
@@ -916,16 +916,17 @@ int main(int argc, char *argv[]) {
         strcpy (runfile, mount_dir);
         strcat (runfile, "/Run");
 
-        char static_bash[mount_dir_size + 13]; /* enough for mount_dir + "static/bash" */
-        strcpy (static_bash, mount_dir);
-        strcat (static_bash, "/static/bash");
+        // char static_bash[mount_dir_size + 13]; /* enough for mount_dir + "static/bash" */
+        // strcpy (static_bash, mount_dir);
+        // strcat (static_bash, "/static/bash");
 
-        for (int i = argc+1; i>=2; i--)
-            real_argv[i] = real_argv[i-1];
-        real_argv[1] = runfile;
+        // for (int i = argc+1; i>=2; i--)
+        //     real_argv[i] = real_argv[i-1];
+        // real_argv[1] = runfile;
 
         /* TODO: Find a way to get the exit status and/or output of this */
-        execv(static_bash, real_argv);
+        // execv(static_bash, real_argv);
+        execv(runfile, real_argv);
         /* Error if we continue here */
         perror("execv error");
         exit(EXIT_EXECERROR);
