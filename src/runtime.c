@@ -1,5 +1,5 @@
 #ident "Runtime for RunImage by VHSgunzo, vhsgunzo.github.io"
-#define RUNTIME_VERSION "0.4.6"
+#define RUNTIME_VERSION "0.4.7"
 
 #define _GNU_SOURCE
 
@@ -169,7 +169,7 @@ mkdir_p(const char* const path)
             /* Temporarily truncate */
             *p = '\0';
 
-            if (mkdir(_path, 0755) != 0) {
+            if (mkdir(_path, 0700) != 0) {
                 if (errno != EEXIST)
                     return -1;
             }
@@ -178,7 +178,7 @@ mkdir_p(const char* const path)
         }
     }
 
-    if (mkdir(_path, 0755) != 0) {
+    if (mkdir(_path, 0700) != 0) {
         if (errno != EEXIST)
             return -1;
     }
@@ -495,10 +495,10 @@ build_mount_point(char* mount_dir, const char* const argv0, char const* const te
     }
 
     strcpy(mount_dir, temp_base);
-    strncpy(mount_dir + templen, "/.mount_", 8);
-    strncpy(mount_dir + templen + 8, path_basename, namelen);
-    strncpy(mount_dir+templen+8+namelen, "XXXXXX", 6);
-    mount_dir[templen+8+namelen+6] = 0; // null terminate destination
+    strncpy(mount_dir + templen, "/", 1);
+    strncpy(mount_dir + templen + 1, path_basename, namelen);
+    strncpy(mount_dir + templen + 1 + namelen, "XXXXXX", 6);
+    mount_dir[templen + 1 + namelen + 6] = 0; // null terminate destination
 }
 
 int main(int argc, char *argv[]) {
@@ -563,6 +563,10 @@ int main(int argc, char *argv[]) {
         if (TMPDIR != NULL)
             strcpy(temp_base, getenv("TMPDIR"));
     }
+
+    char tmprunmnt[17];
+    sprintf(tmprunmnt, "/.r%u/mnt", geteuid());
+    strcat(temp_base, tmprunmnt);
 
     fs_offset = appimage_get_elf_size(runimage_path);
     char sfs_offset[snprintf(NULL, 0, "%lu", fs_offset)];
@@ -666,7 +670,7 @@ int main(int argc, char *argv[]) {
 
         char* prefix = malloc(strlen(temp_base) + 20 + strlen(hexlified_digest) + 2);
         strcpy(prefix, temp_base);
-        strcat(prefix, "/runtime_extracted_");
+        strcat(prefix, "/runimage_");
         strcat(prefix, hexlified_digest);
         free(hexlified_digest);
 
@@ -684,19 +688,14 @@ int main(int argc, char *argv[]) {
             exit(EXIT_EXECERROR);
         } else if (pid == 0) {
             const char run_fname[] = "/Run";
-            char* runfile_path = malloc(strlen(prefix) + 1 + strlen(run_fname) + 1);
-            strcpy(runfile_path, prefix);
-            strcat(runfile_path, run_fname);
-
-            const char static_bash_fname[] = "/static/bash";
-            char* static_bash_path = malloc(strlen(prefix) + 1 + strlen(static_bash_fname) + 1);
-            strcpy(static_bash_path, prefix);
-            strcat(static_bash_path, static_bash_fname);
+            char* runfile = malloc(strlen(prefix) + 1 + strlen(run_fname) + 1);
+            strcpy(runfile, prefix);
+            strcat(runfile, run_fname);
 
             // create copy of argument list without the --runtime-extract-and-run parameter
             char* new_argv[argc];
             int new_argc = 0;
-            new_argv[new_argc++] = strdup(runfile_path);
+            new_argv[new_argc++] = strdup(runfile);
             for (int i = 1; i < argc; ++i) {
                 if (strcmp(argv[i], "--runtime-extract-and-run") != 0) {
                     new_argv[new_argc++] = strdup(argv[i]);
@@ -704,24 +703,15 @@ int main(int argc, char *argv[]) {
             }
             new_argv[new_argc] = NULL;
 
-            // add runfile_path to new_argv
-            for (int i = new_argc+1; i>=2; i--)
-                new_argv[i] = new_argv[i-1];
-            new_argv[1] = runfile_path;
-
             /* Setting some environment variables that the app "inside" might use */
             setenv("RUNDIR", prefix, 1);
-            // setenv("RUNIMAGE", fullpath, 1);
-            // setenv("ARGV0", argv0_path, 1);
-            // setenv("RUNOFFSET", sfs_offset, 1);
 
-            execv(static_bash_path, new_argv);
+            execv(runfile, new_argv);
 
             int error = errno;
-            fprintf(stderr, "Failed to run %s: %s\n", static_bash_path, strerror(error));
+            fprintf(stderr, "Failed to run %s: %s\n", runfile, strerror(error));
 
-            free(runfile_path);
-            free(static_bash_path);
+            free(runfile);
             exit(EXIT_EXECERROR);
         }
 
@@ -783,6 +773,11 @@ int main(int argc, char *argv[]) {
     pid_t pid;
     char **real_argv;
     int i;
+
+    if (mkdir_p(temp_base) == -1) {
+        perror("create parrent mount dir error");
+        exit (EXIT_EXECERROR);
+    }
 
     if (mkdtemp(mount_dir) == NULL) {
         perror ("create mount dir error");
@@ -893,18 +888,10 @@ int main(int argc, char *argv[]) {
         /* If there is a directory with the same name as the AppImage plus ".home", then export $HOME */
         strcpy (portable_home_dir, fullpath);
         strcat (portable_home_dir, ".home");
-        // if(is_writable_directory(portable_home_dir)){
-        //     /* fprintf(stderr, "Setting $HOME to %s\n", portable_home_dir); */
-        //     setenv("HOME",portable_home_dir,1);
-        // }
 
         /* If there is a directory with the same name as the AppImage plus ".config", then export $XDG_CONFIG_HOME */
         strcpy (portable_config_dir, fullpath);
         strcat (portable_config_dir, ".config");
-        // if(is_writable_directory(portable_config_dir)){
-        //     /* fprintf(stderr, "Setting $XDG_CONFIG_HOME to %s\n", portable_config_dir); */
-        //     setenv("XDG_CONFIG_HOME",portable_config_dir,1);
-        // }
 
         /* Original working directory */
         char cwd[1024];
@@ -913,16 +900,8 @@ int main(int argc, char *argv[]) {
         }
 
         char runfile[mount_dir_size + 5]; /* enough for mount_dir + "/Run" */
-        strcpy (runfile, mount_dir);
-        strcat (runfile, "/Run");
-
-        // char static_bash[mount_dir_size + 13]; /* enough for mount_dir + "static/bash" */
-        // strcpy (static_bash, mount_dir);
-        // strcat (static_bash, "/static/bash");
-
-        // for (int i = argc+1; i>=2; i--)
-        //     real_argv[i] = real_argv[i-1];
-        // real_argv[1] = runfile;
+        strcpy(runfile, mount_dir);
+        strcat(runfile, "/Run");
 
         /* TODO: Find a way to get the exit status and/or output of this */
         // execv(static_bash, real_argv);
