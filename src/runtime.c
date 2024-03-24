@@ -1,5 +1,5 @@
 #ident "Runtime for RunImage by VHSgunzo, vhsgunzo.github.io"
-#define RUNTIME_VERSION "0.4.7"
+#define RUNTIME_VERSION "0.4.8"
 
 #define _GNU_SOURCE
 
@@ -144,46 +144,44 @@ char* getArg(int argc, char *argv[],char chr)
     return NULL;
 }
 
-/* mkdir -p implemented in C, needed for https://github.com/AppImage/AppImageKit/issues/333
- * https://gist.github.com/JonathonReinhart/8c0d90191c38af2dcadb102c4e202950 */
-int
-mkdir_p(const char* const path)
-{
-    /* Adapted from http://stackoverflow.com/a/2336245/119527 */
-    const size_t len = strlen(path);
-    char _path[PATH_MAX];
-    char *p;
+int mkdir_p(const char *path, mode_t mode) {
+    char *tmp = strdup(path);
+    char *p = tmp;
+    int ret = 0;
 
-    errno = 0;
+    if (tmp == NULL) {
+        return -1;
+    }
 
-    /* Copy string so its mutable */
-    if (len > sizeof(_path)-1) {
+    // Check if the path length exceeds PATH_MAX
+    if (strlen(path) >= PATH_MAX) {
+        free(tmp);
         errno = ENAMETOOLONG;
         return -1;
     }
-    strcpy(_path, path);
 
-    /* Iterate the string */
-    for (p = _path + 1; *p; p++) {
-        if (*p == '/') {
-            /* Temporarily truncate */
+    // Use 0755 as the default mode if none is provided
+    if (mode == 0) { mode = 0755 ; }
+
+    do {
+        p = strchr(p + 1, '/');
+        if (p) {
             *p = '\0';
-
-            if (mkdir(_path, 0700) != 0) {
-                if (errno != EEXIST)
-                    return -1;
+        }
+        if (mkdir(tmp, mode) != 0) {
+            if (errno != EEXIST) {
+                ret = errno;
+                break;
             }
-
+        }
+        if (p) {
             *p = '/';
         }
-    }
+    } while (p);
 
-    if (mkdir(_path, 0700) != 0) {
-        if (errno != EEXIST)
-            return -1;
-    }
+    free(tmp);
 
-    return 0;
+    return (ret);
 }
 
 void
@@ -266,7 +264,7 @@ bool extract_appimage(const char* const runimage_path, const char* const _prefix
         strcat(prefix, "/");
 
     if (access(prefix, F_OK) == -1) {
-        if (mkdir_p(prefix) == -1) {
+        if (mkdir_p(prefix, 0700) == -1) {
             perror("mkdir_p error");
             return false;
         }
@@ -315,7 +313,7 @@ bool extract_appimage(const char* const runimage_path, const char* const _prefix
                     // fprintf(stderr, "inode.xtra.dir.parent_inode: %ui\n", inode.xtra.dir.parent_inode);
                     // fprintf(stderr, "mkdir_p: %s/\n", prefixed_path_to_extract);
                     if (access(prefixed_path_to_extract, F_OK) == -1) {
-                        if (mkdir_p(prefixed_path_to_extract) == -1) {
+                        if (mkdir_p(prefixed_path_to_extract, 0) == -1) {
                             perror("mkdir_p error");
                             rv = false;
                             break;
@@ -352,7 +350,7 @@ bool extract_appimage(const char* const runimage_path, const char* const _prefix
                         if (p) {
                             // set an \0 to end the split the string
                             *p = '\0';
-                            mkdir_p(prefixed_path_to_extract);
+                            mkdir_p(prefixed_path_to_extract, 0);
 
                             // restore dir seprator
                             *p = '/';
@@ -774,7 +772,7 @@ int main(int argc, char *argv[]) {
     char **real_argv;
     int i;
 
-    if (mkdir_p(temp_base) == -1) {
+    if (mkdir_p(temp_base, 0700) == -1) {
         perror("create parrent mount dir error");
         exit (EXIT_EXECERROR);
     }
