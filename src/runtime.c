@@ -1,5 +1,5 @@
 #ident "Runtime for RunImage by VHSgunzo, vhsgunzo.github.io"
-#define RUNTIME_VERSION "0.4.8"
+#define RUNTIME_VERSION "0.4.9"
 
 #define _GNU_SOURCE
 
@@ -562,9 +562,9 @@ int main(int argc, char *argv[]) {
             strcpy(temp_base, getenv("TMPDIR"));
     }
 
-    char tmprunmnt[17];
-    sprintf(tmprunmnt, "/.r%u/mnt", geteuid());
-    strcat(temp_base, tmprunmnt);
+    char reuiddir[13];
+    sprintf(reuiddir, "%s/.r%u", temp_base, geteuid());
+    sprintf(temp_base, "%s/mnt", reuiddir);
 
     fs_offset = appimage_get_elf_size(runimage_path);
     char sfs_offset[snprintf(NULL, 0, "%lu", fs_offset)];
@@ -723,6 +723,8 @@ int main(int argc, char *argv[]) {
                 if (status == 0)        /* avoid messing existing failure exit status */
                   status = EXIT_EXECERROR;
             }
+            rmdir(temp_base);
+            rmdir(reuiddir);
         }
 
         // template == prefix, must be freed only once
@@ -822,6 +824,8 @@ int main(int argc, char *argv[]) {
             "for more information";
             notify(title, body, 0); // 3 seconds timeout
         };
+        rmdir(temp_base);
+        rmdir(reuiddir);
     } else {
         /* in parent, child is $pid */
         int c;
