@@ -19,25 +19,25 @@ jobs:
             path: main
             filter: "blob:none" #https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/
   
-      - name: Install CoreUtils & Deps
-        run: |
-          #presets
-          set -x ; set +e
-          #-------------#     
-          export DEBIAN_FRONTEND="noninteractive"
-          sudo apt update -y -qq
-          sudo apt install 7zip b3sum bc binutils binutils-aarch64-linux-gnu coreutils curl dos2unix fdupes jq moreutils wget -y -qq
-          sudo apt-get install apt-transport-https apt-utils ca-certificates binutils binutils-aarch64-linux-gnu coreutils dos2unix fdupes gnupg2 jq moreutils p7zip-full rename rsync software-properties-common texinfo tmux upx util-linux wget -y -qq 2>/dev/null ; sudo apt-get update -y 2>/dev/null
-          #Do again, sometimes fails
-          sudo apt install 7zip b3sum bc binutils binutils-aarch64-linux-gnu coreutils curl dos2unix fdupes jq moreutils wget -y -qq
-          sudo apt-get install apt-transport-https apt-utils ca-certificates binutils binutils-aarch64-linux-gnu coreutils dos2unix fdupes gnupg2 jq moreutils p7zip-full rename rsync software-properties-common texinfo tmux upx util-linux wget -y -qq2>/dev/null ; sudo apt-get update -y 2>/dev/null
-          #7z
-          sudo curl -qfsSL "https://bin.ajam.dev/$(uname -m)/7z" -o "/usr/bin/7z" && sudo cp --force "/usr/bin/7z" "/usr/local/bin/7z"
-          sudo chmod +x "/usr/bin/7z" "/usr/local/bin/7z"
-          #upx
-          sudo curl -qfsSL "https://bin.ajam.dev/$(uname -m)/upx" -o "/usr/bin/upx" && sudo cp --force "/usr/bin/upx" "/usr/local/bin/upx"
-          sudo chmod +x "/usr/bin/upx" "/usr/local/bin/upx"
-        continue-on-error: true
+        - name: Install CoreUtils & Deps
+          run: |
+            #presets
+            set -x ; set +e
+            #-------------#     
+            export DEBIAN_FRONTEND="noninteractive"
+            sudo apt update -y -qq
+            sudo apt install 7zip b3sum bc binutils binutils-aarch64-linux-gnu coreutils curl dos2unix fdupes jq moreutils wget -y -qq
+            sudo apt-get install apt-transport-https apt-utils ca-certificates binutils binutils-aarch64-linux-gnu coreutils dos2unix fdupes gnupg2 jq moreutils p7zip-full rename rsync software-properties-common texinfo tmux upx util-linux wget -y -qq 2>/dev/null ; sudo apt-get update -y 2>/dev/null
+            #Do again, sometimes fails
+            sudo apt install 7zip b3sum bc binutils binutils-aarch64-linux-gnu coreutils curl dos2unix fdupes jq moreutils wget -y -qq
+            sudo apt-get install apt-transport-https apt-utils ca-certificates binutils binutils-aarch64-linux-gnu coreutils dos2unix fdupes gnupg2 jq moreutils p7zip-full rename rsync software-properties-common texinfo tmux upx util-linux wget -y -qq2>/dev/null ; sudo apt-get update -y 2>/dev/null
+            #7z
+            sudo curl -qfsSL "https://bin.ajam.dev/$(uname -m)/7z" -o "/usr/bin/7z" && sudo cp --force "/usr/bin/7z" "/usr/local/bin/7z"
+            sudo chmod +x "/usr/bin/7z" "/usr/local/bin/7z"
+            #upx
+            sudo curl -qfsSL "https://bin.ajam.dev/$(uname -m)/upx" -o "/usr/bin/upx" && sudo cp --force "/usr/bin/upx" "/usr/local/bin/upx"
+            sudo chmod +x "/usr/bin/upx" "/usr/local/bin/upx"
+          continue-on-error: true
 
         - name: Setup Env
           run: |
@@ -68,7 +68,7 @@ jobs:
             #presets
             set -x ; set +e
             #-------------#
-           #Build 
+            #Build 
             pushd "$(mktemp -d)" >/dev/null 2>&1
             docker stop "ubuntu-builder" 2>/dev/null ; docker rm "ubuntu-builder" 2>/dev/null
             docker run --platform="linux/amd64" --privileged --net="host" --name "ubuntu-builder" "ubuntu:jammy" \
@@ -87,7 +87,7 @@ jobs:
             find "/build-bins/" -type f -exec bash -c '\''mv "$0" "${0}-$(uname -m)-$(uname -s)"'\'' {} \; 2>/dev/null
             popd >/dev/null 2>&1
             '
-           #Copy
+            #Copy
             docker cp "ubuntu-builder:/build-bins/." "$(pwd)/"
             find "." -maxdepth 1 -type f -exec sh -c 'file "{}"; du -sh "{}"' \;
             sudo rsync -av --copy-links --exclude="*/" "./." "${ARTIFACTS}/"
@@ -179,39 +179,39 @@ jobs:
               sudo chmod +x "/usr/bin/upx" "/usr/local/bin/upx"
             continue-on-error: true
 
-        - name: Build Binaries (aarch64-Linux)
-          run: |
-            #presets
-            set -x ; set +e
-            #-------------#
-           #Build 
-            pushd "$(mktemp -d)" >/dev/null 2>&1
-            docker stop "ubuntu-builder" 2>/dev/null ; docker rm "ubuntu-builder" 2>/dev/null
-            docker run --platform="linux/arm64" --privileged --net="host" --name "ubuntu-builder" "ubuntu:jammy" \
-            bash -c '
-            apt update -y -qq && apt install binutils coreutils curl git jq moreutils util-linux rsync sudo wget -y -qq
-            export DEBIAN_FRONTEND="noninteractive"
-            echo "debconf debconf/frontend select Noninteractive" | debconf-set-selections
-            rm -rf "/build-bins" 2>/dev/null ; mkdir -p "/build-bins" && pushd "$(mktemp -d)" >/dev/null 2>&1
-            git clone --filter "blob:none" "https://github.com/VHSgunzo/runimage-runtime-static" && cd "./runimage-runtime-static"
-            "./build.sh"
-            find . -type f -name "*.xz" -exec tar -xf {} \;
-            find . -type d -name "*release*" ! -name "*.xz" -exec rsync -av --copy-links "{}/." "/build-bins/" \;
-            find "/build-bins/" -type f -name "*.sh" -delete 2>/dev/null
-            find "/build-bins/" -type f -exec strip --strip-debug --strip-dwo --strip-unneeded -R ".comment" -R ".gnu.version" --preserve-dates "{}" \; 2>/dev/null
-            find "/build-bins/" -type f -exec objcopy --remove-section=".note.gnu.build-id" "{}" \; 2>/dev/null
-            find "/build-bins/" -type f -exec bash -c '\''mv "$0" "${0}-$(uname -m)-$(uname -s)"'\'' {} \; 2>/dev/null
-            popd >/dev/null 2>&1
-            '
-           #Copy
-            docker cp "ubuntu-builder:/build-bins/." "$(pwd)/"
-            find "." -maxdepth 1 -type f -exec sh -c 'file "{}"; du -sh "{}"' \;
-            sudo rsync -av --copy-links --exclude="*/" "./." "${ARTIFACTS}/"
-            sudo chown -R "$(whoami):$(whoami)" "${ARTIFACTS}" && chmod -R 755 "${ARTIFACTS}"
-            #End
-            docker stop "ubuntu-builder" 2>/dev/null ; docker rm "ubuntu-builder"
-            popd >/dev/null 2>&1
-          continue-on-error: true
+          - name: Build Binaries (aarch64-Linux)
+            run: |
+              #presets
+              set -x ; set +e
+              #-------------#
+              #Build 
+              pushd "$(mktemp -d)" >/dev/null 2>&1
+              docker stop "ubuntu-builder" 2>/dev/null ; docker rm "ubuntu-builder" 2>/dev/null
+              docker run --platform="linux/arm64" --privileged --net="host" --name "ubuntu-builder" "ubuntu:jammy" \
+              bash -c '
+              apt update -y -qq && apt install binutils coreutils curl git jq moreutils util-linux rsync sudo wget -y -qq
+              export DEBIAN_FRONTEND="noninteractive"
+              echo "debconf debconf/frontend select Noninteractive" | debconf-set-selections
+              rm -rf "/build-bins" 2>/dev/null ; mkdir -p "/build-bins" && pushd "$(mktemp -d)" >/dev/null 2>&1
+              git clone --filter "blob:none" "https://github.com/VHSgunzo/runimage-runtime-static" && cd "./runimage-runtime-static"
+              "./build.sh"
+              find . -type f -name "*.xz" -exec tar -xf {} \;
+              find . -type d -name "*release*" ! -name "*.xz" -exec rsync -av --copy-links "{}/." "/build-bins/" \;
+              find "/build-bins/" -type f -name "*.sh" -delete 2>/dev/null
+              find "/build-bins/" -type f -exec strip --strip-debug --strip-dwo --strip-unneeded -R ".comment" -R ".gnu.version" --preserve-dates "{}" \; 2>/dev/null
+              find "/build-bins/" -type f -exec objcopy --remove-section=".note.gnu.build-id" "{}" \; 2>/dev/null
+              find "/build-bins/" -type f -exec bash -c '\''mv "$0" "${0}-$(uname -m)-$(uname -s)"'\'' {} \; 2>/dev/null
+              popd >/dev/null 2>&1
+              '
+              #Copy
+              docker cp "ubuntu-builder:/build-bins/." "$(pwd)/"
+              find "." -maxdepth 1 -type f -exec sh -c 'file "{}"; du -sh "{}"' \;
+              sudo rsync -av --copy-links --exclude="*/" "./." "${ARTIFACTS}/"
+              sudo chown -R "$(whoami):$(whoami)" "${ARTIFACTS}" && chmod -R 755 "${ARTIFACTS}"
+              #End
+              docker stop "ubuntu-builder" 2>/dev/null ; docker rm "ubuntu-builder"
+              popd >/dev/null 2>&1
+            continue-on-error: true
 
           - name: Archive Binaries (.tar)
             run: |
