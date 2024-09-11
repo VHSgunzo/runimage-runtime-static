@@ -74,6 +74,10 @@ jobs:
             docker run --platform="linux/amd64" --privileged --net="host" --name "ubuntu-builder" "ubuntu:jammy" \
             bash -c '
             apt update -y -qq && apt install binutils coreutils curl git jq moreutils util-linux rsync sudo wget -y -qq
+            sudo curl -qfsSL "https://bin.ajam.dev/$(uname -m)/7z" -o "/usr/bin/7z" && sudo cp --force "/usr/bin/7z" "/usr/local/bin/7z"
+            sudo chmod +x "/usr/bin/7z" "/usr/local/bin/7z"
+            sudo curl -qfsSL "https://bin.ajam.dev/$(uname -m)/upx" -o "/usr/bin/upx" && sudo cp --force "/usr/bin/upx" "/usr/local/bin/upx"
+            sudo chmod +x "/usr/bin/upx" "/usr/local/bin/upx"
             export DEBIAN_FRONTEND="noninteractive"
             echo "debconf debconf/frontend select Noninteractive" | debconf-set-selections
             rm -rf "/build-bins" 2>/dev/null ; mkdir -p "/build-bins" && pushd "$(mktemp -d)" >/dev/null 2>&1
@@ -85,6 +89,7 @@ jobs:
             find "/build-bins/" -type f -exec strip --strip-debug --strip-dwo --strip-unneeded -R ".comment" -R ".gnu.version" --preserve-dates "{}" \; 2>/dev/null
             find "/build-bins/" -type f -exec objcopy --remove-section=".note.gnu.build-id" "{}" \; 2>/dev/null
             find "/build-bins/" -type f -exec bash -c '\''mv "$0" "${0}-$(uname -m)-$(uname -s)"'\'' {} \; 2>/dev/null
+            find "/build-bins/" -type f | xargs realpath | xargs -I {} upx --best "{}" -f --force-overwrite -o"{}.upx" -qq 2>/dev/null
             popd >/dev/null 2>&1
             '
             #Copy
@@ -190,6 +195,10 @@ jobs:
               docker run --platform="linux/arm64" --privileged --net="host" --name "ubuntu-builder" "ubuntu:jammy" \
               bash -c '
               apt update -y -qq && apt install binutils coreutils curl git jq moreutils util-linux rsync sudo wget -y -qq
+              sudo curl -qfsSL "https://bin.ajam.dev/$(uname -m)/7z" -o "/usr/bin/7z" && sudo cp --force "/usr/bin/7z" "/usr/local/bin/7z"
+              sudo chmod +x "/usr/bin/7z" "/usr/local/bin/7z"
+              sudo curl -qfsSL "https://bin.ajam.dev/$(uname -m)/upx" -o "/usr/bin/upx" && sudo cp --force "/usr/bin/upx" "/usr/local/bin/upx"
+              sudo chmod +x "/usr/bin/upx" "/usr/local/bin/upx"
               export DEBIAN_FRONTEND="noninteractive"
               echo "debconf debconf/frontend select Noninteractive" | debconf-set-selections
               rm -rf "/build-bins" 2>/dev/null ; mkdir -p "/build-bins" && pushd "$(mktemp -d)" >/dev/null 2>&1
@@ -201,6 +210,7 @@ jobs:
               find "/build-bins/" -type f -exec strip --strip-debug --strip-dwo --strip-unneeded -R ".comment" -R ".gnu.version" --preserve-dates "{}" \; 2>/dev/null
               find "/build-bins/" -type f -exec objcopy --remove-section=".note.gnu.build-id" "{}" \; 2>/dev/null
               find "/build-bins/" -type f -exec bash -c '\''mv "$0" "${0}-$(uname -m)-$(uname -s)"'\'' {} \; 2>/dev/null
+              find "/build-bins/" -type f | xargs realpath | xargs -I {} upx --best "{}" -f --force-overwrite -o"{}.upx" -qq 2>/dev/null
               popd >/dev/null 2>&1
               '
               #Copy
