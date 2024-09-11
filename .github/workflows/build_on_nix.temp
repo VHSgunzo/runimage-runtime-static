@@ -1,0 +1,250 @@
+#!/usr/bin/env bash
+
+###-----------------------------------------------------###
+### Setups ENV, Install Deps & Builds Binaries (+ upx)  ###
+### This Script must be run as `root` (passwordless)    ###
+### Assumptions: OS (Ubuntu) | Arch ($(uname -m) | aarch64)  ###
+### Can also run in chroot | Docker (nix may not work)  ###
+###-----------------------------------------------------###
+
+
+##-------------------------------------------------------#
+##Install CoreUtils & Deps
+export DEBIAN_FRONTEND="noninteractive"
+echo 'debconf debconf/frontend select Noninteractive' | sudo debconf-set-selections
+sudo apt update -y -qq
+sudo apt install 7zip b3sum bc binutils binutils-aarch64-linux-gnu coreutils curl dos2unix fdupes jq moreutils wget -y -qq
+sudo apt-get install apt-transport-https apt-utils b3sum bc binutils binutils-aarch64-linux-gnu ca-certificates coreutils dos2unix fdupes gnupg2 jq moreutils p7zip-full rename rsync software-properties-common texinfo tmux upx util-linux wget -y -qq 2>/dev/null ; sudo apt-get update -y 2>/dev/null
+#Do again, sometimes fails
+sudo apt install 7zip b3sum bc binutils binutils-aarch64-linux-gnu coreutils curl dos2unix fdupes jq moreutils wget -y -qq
+sudo apt-get install apt-transport-https apt-utils b3sum bc binutils binutils-aarch64-linux-gnu ca-certificates coreutils dos2unix fdupes gnupg2 jq moreutils p7zip-full rename rsync software-properties-common texinfo tmux upx util-linux wget -y -qq2>/dev/null ; sudo apt-get update -y 2>/dev/null
+##More Deps
+sudo apt-get update -y -qq
+sudo apt-get install autoconf automake autopoint binutils bison build-essential byacc ca-certificates ccache clang diffutils dos2unix gawk flex file imagemagick jq liblz-dev librust-lzma-sys-dev libsqlite3-dev libtool libtool-bin lzip lzma lzma-dev make musl musl-dev musl-tools p7zip-full patch patchelf pkg-config qemu-user-static rsync scons sqlite3 sqlite3-pcre sqlite3-tools texinfo wget -y -qq 2>/dev/null
+#Re
+sudo apt-get install autoconf automake autopoint binutils bison build-essential byacc ca-certificates ccache clang diffutils dos2unix gawk flex file imagemagick jq liblz-dev librust-lzma-sys-dev libsqlite3-dev libtool libtool-bin lzip lzma lzma-dev make musl musl-dev musl-tools p7zip-full patch patchelf pkg-config qemu-user-static rsync scons sqlite3 sqlite3-pcre sqlite3-tools texinfo wget -y -qq 2>/dev/null
+sudo apt install python3-pip python3-venv -y -qq 2>/dev/null
+pip install --break-system-packages --upgrade pip || pip install --upgrade pip
+sudo apt install lm-sensors pciutils procps python3-distro python3-netifaces sysfsutils virt-what -y -qq 2>/dev/null
+pip install build ansi2txt cffi pipx scons scuba py2static pytest typer --upgrade --force 2>/dev/null 
+pip install build ansi2txt cffi pipx scons scuba py2static pytest typer --break-system-packages --upgrade --force 2>/dev/null
+##-------------------------------------------------------#
+
+##-------------------------------------------------------#
+##ENV
+SYSTMP="$(dirname $(mktemp -u))" && export SYSTMP="${SYSTMP}" ; mkdir -p "${SYSTMP}/nix_builder"
+TMPDIRS="mktemp -d --tmpdir=${SYSTMP}/nix_builder XXXXXXX_linux_$(uname -m)-$(uname -s)" && export TMPDIRS="${TMPDIRS}"
+##Artifacts
+ARTIFACTS="${SYSTMP}/ARTIFACTS-$(uname -m)-$(uname -s)" && export "ARTIFACTS=${ARTIFACTS}"
+rm -rf "${ARTIFACTS}" 2>/dev/null ; mkdir -p "${ARTIFACTS}"
+##User-Agent
+USER_AGENT="$(curl -qfsSL 'https://pub.ajam.dev/repos/Azathothas/Wordlists/Misc/User-Agents/ua_chrome_macos_latest.txt')" && export USER_AGENT="${USER_AGENT}"
+##-------------------------------------------------------#
+
+##-------------------------------------------------------#
+##Install Nix
+##Official Installers break
+#curl -qfsSL "https://nixos.org/nix/install" | bash -s -- --no-daemon
+#source "$HOME/.bash_profile" ; source "$HOME/.nix-profile/etc/profile.d/nix.sh" ; . "$HOME/.nix-profile/etc/profile.d/nix.sh"
+##https://github.com/DeterminateSystems/nix-installer
+"/nix/nix-installer" uninstall --no-confirm 2>/dev/null
+curl -qfsSL "https://install.determinate.systems/nix" | bash -s -- install linux --init none --no-confirm
+source "/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh"
+sudo chown --recursive "$(whoami)" "/nix"
+echo "root    ALL=(ALL:ALL) ALL" | sudo tee -a "/etc/sudoers"
+nix --version && nix-channel --list && nix-channel --update --cores "$(($(nproc)+1))" --quiet
+##-------------------------------------------------------#
+
+##-------------------------------------------------------#
+##Install 7z
+pushd "$($TMPDIRS)" >/dev/null 2>&1 && curl -A "${USER_AGENT}" -qfsSLJO "https://www.7-zip.org/$(curl -A "${USER_AGENT}" -qfsSL "https://www.7-zip.org/download.html" | grep -o 'href="[^"]*"' | sed 's/href="//' | grep -i "$(uname -s)-$(uname -m | sed 's/x86_64/x64\\|x86_64/;s/aarch64/arm64\\|aarch64/')" | sed 's/"$//' | sort -n -r | head -n 1)" 2>/dev/null
+find "." -type f -name '*.xz' -exec tar -xf {} \; 2>/dev/null
+sudo find "." -type f -name '7zzs' ! -name '*.xz' -exec mv {} "/usr/bin/7z" \; 2>/dev/null
+sudo cp "/usr/bin/7z" "/usr/local/bin/7z" 2>/dev/null
+sudo chmod +x "/usr/bin/7z" "/usr/local/bin/7z" 2>/dev/null
+popd >/dev/null 2>&1
+##-------------------------------------------------------#
+
+##-------------------------------------------------------#
+##Install upX
+pushd "$($TMPDIRS)" >/dev/null 2>&1
+curl -qfLJO "$(curl -qfsSL https://api.github.com/repos/upx/upx/releases/latest | jq -r '.assets[].browser_download_url' | grep -i "$(uname -m | sed 's/$(uname -m)/amd64\\|$(uname -m)/;s/aarch64/arm64\\|aarch64/')_$(uname -s)")" 2>/dev/null
+find "." -type f -name '*tar*' -exec tar -xvf {} \; 2>/dev/null
+find "." -type f -exec file -i "{}" \; | grep "application/.*executable" | cut -d":" -f1 | xargs realpath | xargs -I {} sudo cp --force {} "/usr/bin/upx"
+sudo cp "/usr/bin/upx" "/usr/local/bin/upx" 2>/dev/null
+sudo chmod +x "/usr/bin/upx" "/usr/local/bin/upx" 2>/dev/null
+popd >/dev/null 2>&1
+##-------------------------------------------------------#
+
+##-------------------------------------------------------#
+##Setup Alpine Chroot
+pushd "$($TMPDIRS)" >/dev/null 2>&1
+BASE_DIR="$(realpath .)"
+ALPINE_CHROOT="${BASE_DIR}/alpine" && mkdir -p "${ALPINE_CHROOT}"
+BUILD_DIR="${BASE_DIR}/build" && mkdir -p "${BUILD_DIR}"
+MISC_DIR="${BASE_DIR}/misc" && mkdir -p "${MISC_DIR}"
+OUT_DIR="${BASE_DIR}/out" && mkdir -p "${OUT_DIR}"
+ALPINE_DEPS="
+  acl-static argp-standalone attr-static autoconf automake \
+  b3sum bash bc bcc-static bind-tools binutils bison brotli-static build-base bzip2-static bzip3-static \
+  clang clang-static cmake coreutils curl curl-dev curl-static \
+  device-mapper-static diffutils dos2unix \
+  elfutils execline execline-static expat-static expect ethtool\
+  flex fontconfig-static fuse fuse-static fuse3-dev fuse3-static \
+  gawk gcc gettext gettext-dev gettext-static git go glib-static gmp-dev gperf grep \
+  imagemagick imagemagick-static iperf iputils itstool \
+  jq json-c-dev json-glib-dev \
+  keyutils \
+  libarchive-static libcaca-static libc-dev libcap-static libcap-ng-static libcurl libelf-static libffi-dev libssh-dev libtasn1-dev libtool libtpms libtpms-dev linux-headers linux-tools lvm2-dev lvm2-static lz4 lz4-dev lz4-libs lz4-static \
+  make mariadb-static mesa mesa-dev mesa-gbm meson mlocate mold moreutils musl musl-dev musl-fts musl-obstack-dev musl-utils \
+  nano nasm ncurses ncurses-static nettle-static nghttp2-static ninja-build \
+  openssl openssl-dev openssl-libs-static \
+  patchelf pcre2 perl perl-xml-parser pkgconf pkgconfig popt-dev popt-static procps protobuf protobuf-c protobuf-c-compiler protobuf-dev python3 python3-dev py3-distro py3-docutils py3-elftools py3-netifaces py3-pip pipx\
+  readline readline-dev readline-static rsync \
+  tar texinfo txt2man tzdata \
+  unzip upx util-linux util-linux-dev util-linux-static \
+  wget wolfssl wolfssl-dev wpa_supplicant \
+  xxd xxhash xz xz-dev xz-libs xz-static \
+  yaml yaml-dev yaml-static \
+  zig zlib zlib-dev zlib-static zlib-ng zlib-ng-dev zstd zstd-static"
+#https://wiki.alpinelinux.org/wiki/Alpine_Linux_in_a_chroot  
+curl -qfsSL "https://gitlab.alpinelinux.org/api/v4/projects/5/packages/generic//"$(curl -qfsSL "https://gitlab.alpinelinux.org/api/v4/projects/5/repository/tags" | jq -r '.[0].name' | tr -d '[:space:]')"/$(uname -m)/apk.static" -o "./apk.static"
+chmod +x "./apk.static"
+sudo "./apk.static" -X "https://dl-cdn.alpinelinux.org/alpine/edge/main" -U --allow-untrusted -p "${ALPINE_CHROOT}" --initdb add "alpine-base"
+sudo mount -o bind "/dev" "${ALPINE_CHROOT}/dev"
+sudo mount -t proc "none" "${ALPINE_CHROOT}/proc"
+sudo mount -o bind "/sys" "${ALPINE_CHROOT}/sys"
+echo -e 'nameserver 8.8.8.8\nnameserver 2620:0:ccc::2' | sudo tee "${ALPINE_CHROOT}/etc/resolv.conf"
+sudo mkdir -p "${ALPINE_CHROOT}/etc/apk"
+echo "https://dl-cdn.alpinelinux.org/alpine/edge/main" | sudo tee "${ALPINE_CHROOT}/etc/apk/repositories"
+echo "https://dl-cdn.alpinelinux.org/alpine/edge/community" | sudo tee -a "${ALPINE_CHROOT}/etc/apk/repositories"
+echo "http://dl-cdn.alpinelinux.org/alpine/edge/testing" | sudo tee -a "${ALPINE_CHROOT}/etc/apk/repositories"
+sudo chroot "${ALPINE_CHROOT}" apk update && apk upgrade --no-interactive 2>/dev/null
+echo "$ALPINE_DEPS" | xargs sudo chroot "${ALPINE_CHROOT}" apk add --latest --upgrade --no-interactive
+#Rust
+sudo chroot "${ALPINE_CHROOT}" bash -c '
+ #https://github.com/rust-lang/rustup/issues/3428
+ pushd "$(mktemp -d)" >/dev/null 2>&1
+ curl -qfsSL "https://static.rust-lang.org/rustup/dist/$(uname -m)-unknown-linux-musl/rustup-init" -o "/usr/bin/rustup-init"
+ #export RUSTUP_HOME="/root/.rustup"
+ chmod +x "/usr/bin/rustup-init" ; rustup-init -y
+ source "$HOME/.cargo/env" ; cargo version'
+popd >/dev/null 2>&1
+##-------------------------------------------------------#
+
+
+##-------------------------------------------------------#
+##Build
+#https://github.com/VHSgunzo/runimage-runtime-static/blob/main/.github/workflows/ci.yml
+pushd "$($TMPDIRS)" >/dev/null 2>&1
+sudo chroot "${ALPINE_CHROOT}" bash -c '
+ #Setup ENV
+  rm -rf  "/build-bins" 2>/dev/null ; mkdir -p "/build-bins" && pushd "$(mktemp -d)" >/dev/null 2>&1
+ #Libs
+  #libfuse.a --> fuse-static : find "/" -name "*libfuse.a" 2>/dev/null
+     apk update --no-interactive && apk add fuse-static --latest --upgrade --no-interactive
+     find "/" -name "*libfuse.a" 2>/dev/null
+  #libfuse3.a --> fuse3-static
+   pushd "$(mktemp -d)" >/dev/null 2>&1 && git clone --filter "blob:none" --depth="1" --quiet "https://github.com/libfuse/libfuse" && cd "./libfuse"
+   apk del fuse3-static --no-interactive 2>/dev/null
+   curl -qfsSL "https://raw.githubusercontent.com/AppImage/type2-runtime/main/patches/libfuse/mount.c.diff" -o "./mount.c.diff"
+   patch -p1 < "./mount.c.diff"
+   meson setup --buildtype="release" \
+            --default-library="static" \
+            --prefer-static -Ddebug="false" \
+            -Db_lto="true" \
+            -Db_pie="true" \
+            -Dutils="false" \
+            -Dexamples="false" \
+            -Dtests="false" \
+            --strip --reconfigure --wipe --clearcache "./STATIC_BUILD" "./"
+         ninja -C "./STATIC_BUILD" -j "$(($(nproc)+1))" install
+    find "/" -name "*libfuse3.a" 2>/dev/null
+    popd >/dev/null 2>&1
+  #liblzma.a --> xz-static
+     apk add xz-static --latest --upgrade --no-interactive
+     find "/" -name "*liblzma.a" 2>/dev/null
+  #liblz4.a --> lz4-static
+   pushd "$(mktemp -d)" >/dev/null 2>&1 && git clone --filter "blob:none" --depth="1" --quiet "https://github.com/lz4/lz4" && cd "./lz4"
+   apk del lz4-static --no-interactive 2>/dev/null
+     unset CFLAGS LDFLAGS
+     make lz4 lz4-release --jobs="$(($(nproc)+1))" --keep-going ; make install
+     
+
+     find "/" -name "*liblz4.a" 2>/dev/null
+   popd >/dev/null 2>&1  
+  #liblzo2.a --> lzo-dev : find "/" -name "*liblzo2.a" 2>/dev/null
+     apk add lzo-dev --latest --upgrade --no-interactive
+     find "/" -name "*liblzo2.a" 2>/dev/null
+  #libsquashfs.a --> squashfs-tools-ng-dev
+     apk add squashfs-tools-ng-dev --latest --upgrade --no-interactive
+     find "/" -name "*libsquashfs.a" 2>/dev/null
+  #libsquashfuse.a libsquashfuse_ll.a --> squashfuse-dev
+     apk add squashfuse-dev --latest --upgrade --no-interactive
+     find "/" -name "*libsquashfuse.a" 2>/dev/null
+     find "/" -name "*libsquashfuse_ll.a" 2>/dev/null
+  #libfuseprivate.a --> squashfuse-static
+   pushd "$(mktemp -d)" >/dev/null 2>&1 && git clone --filter "blob:none" --depth="1" --quiet "https://github.com/vasi/squashfuse" && cd "./squashfuse"
+     export CFLAGS="-O2 -flto=auto -static -w -pipe"
+     export LDFLAGS="-static -s -Wl,-S -Wl,--build-id=none"
+     sed -e "s|main(|fusefs_main(|g" -i "./ll_main.c"
+     grep -r "fusefs_main" "."
+     bash "./autogen.sh" ; "./configure" --disable-demo --disable-shared --enable-static --enable-broken-directory-offsets --enable-sigterm-handler --enable-year2038
+     make --jobs="$(($(nproc)+1))" --keep-going
+     rsync -av --copy-links "./.libs/libsquashfuse.a" "/usr/lib/libsquashfuse.a"
+     rsync -av --copy-links "./.libs/libsquashfuse.a" "/usr/local/lib/libsquashfuse.a"
+     /usr/local/lib/libsquashfuse.a
+
+
+     LIB_VERSION="$(apk info -d squashfuse 2>/dev/null | grep -oP "\d+(\.\d+)+" | head -n 1)" && export LIB_VERSION="${LIB_VERSION}"
+     #libfiles
+      find "." -type f -name "*libfuseprivate.a" -exec file -i "{}" \; | grep "archive" | cut -d":" -f1 | xargs realpath | xargs -I {} rsync -av --copy-links {} "/usr/lib/"
+      find "." -type f -name "*libfuseprivate.la" | xargs realpath | xargs -I {} rsync -av --copy-links {} "/usr/lib/"
+      sed "s/installed=.*/installed=yes/" -i "/usr/lib/libfuseprivate.la"
+      sed "s|libdir=.*|libdir=/usr/lib|" -i "/usr/lib/libfuseprivate.la"
+      chmod +x "/usr/lib/libfuseprivate.la"
+      echo -e "prefix=/usr\nexec_prefix=\${prefix}\nlibdir=\${exec_prefix}/lib\nincludedir=\${prefix}/include/squashfuse\n\nName: fuseprivate\nDescription: Static library for FUSE private functions\nVersion:${LIB_VERSION}\n\nRequires: \nLibs: -L${libdir} -lfuseprivate\nCflags: -I\${includedir}" | sudo tee "/usr/lib/pkgconfig/fuseprivate.pc" >/dev/null
+      ldconfig ; pkg-config --libs fuseprivate
+     #headers
+      #find "." -type f -name "*.h" | xargs realpath | xargs -I {} rsync -av --copy-links {} "/usr/local/include/squashfuse"
+      find "." -type f -name "*.h" | xargs realpath | xargs -I {} /usr/bin/install -c -m 644 {} "/usr/local/include/squashfuse"
+
+    find "/" -name "*libfuseprivate.a" 2>/dev/null
+   popd >/dev/null 2>&1
+ #Build
+  pushd "$(mktemp -d)" >/dev/null 2>&1 && git clone --filter "blob:none" --quiet "https://github.com/Azathothas/runimage-runtime-static" && cd "./runimage-runtime-static"
+  git tag --sort="-v:refname" | head -n 1 > "/build-bins/VERSION.txt"
+  export CFLAGS="-O2 -flto=auto -static -w -pipe"
+  export LDFLAGS="-static -s -Wl,-S -Wl,--build-id=none"
+  make --jobs="$(($(nproc)+1))" --keep-going
+  echo -e "\n[+] Target: $RUST_TARGET\n"
+  echo -e "\n[+] Flags: $RUSTFLAGS\n"
+  sed "/^\[profile\.release\]/,/^$/d" -i "./Cargo.toml" ; echo -e "\n[profile.release]\nstrip = true\nopt-level = 3\nlto = true" >> "./Cargo.toml"
+  rm rust-toolchain* 2>/dev/null
+  cargo build --target "$RUST_TARGET" --release --jobs="$(($(nproc)+1))" --keep-going
+  find "./target/$RUST_TARGET/release" -maxdepth 1 -type f -exec file -i "{}" \; | grep "application/.*executable" | cut -d":" -f1 | xargs realpath | xargs -I {} cp --force {} /build-bins/
+  popd >/dev/null 2>&1
+'
+sudo rsync -av --copy-links --exclude="*/" "${ALPINE_CHROOT}/build-bins/." "${ARTIFACTS}"
+PKG_VERSION="$(cat "${ARTIFACTS}/VERSION.txt")" && export PKG_VERSION="${PKG_VERSION}"
+sudo chown -R "$(whoami):$(whoami)" "${ARTIFACTS}" && chmod -R 755 "${ARTIFACTS}"
+find "${ARTIFACTS}" -type f -name '*.sh' -delete 2>/dev/null
+find "${ARTIFACTS}" -type f ! -name '*.txt' -exec bash -c 'mv "$0" "${0}-$(uname -m)-$(uname -s)"' {} \; 2>/dev/null
+#Strip
+find "${ARTIFACTS}" -type f -exec strip --strip-debug --strip-dwo --strip-unneeded -R ".comment" -R ".gnu.version" --preserve-dates "{}" \; 2>/dev/null
+#upx
+find "${ARTIFACTS}" -type f | xargs realpath | xargs -I {} upx --best "{}" -f --force-overwrite -o"{}.upx" -qq 2>/dev/null
+#End
+popd >/dev/null 2>&1
+##-------------------------------------------------------#
+
+##-------------------------------------------------------#
+#Generate METADATA & Release Notes
+pushd "${ARTIFACTS}" >/dev/null 2>&1
+find "./" -maxdepth 1 -type f | sort | grep -v -E '\.txt$' | xargs file > "${ARTIFACTS}/FILE.txt"
+find "./" -maxdepth 1 -type f | sort | grep -v -E '\.txt$' | xargs sha256sum > "${ARTIFACTS}/SHA256SUM.txt"
+echo "${PKG_VERSION}" > "${ARTIFACTS}/VERSION.txt"
+popd >/dev/null 2>&1
+echo -e "\n[+] Built in $(realpath ${ARTIFACTS})\n"
+ls "${ARTIFACTS}" -lah && echo -e "\n"
+##-------------------------------------------------------#
