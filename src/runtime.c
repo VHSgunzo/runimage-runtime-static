@@ -473,7 +473,7 @@ bool rm_recursive(const char* const path) {
 }
 
 void
-build_mount_point(char* mount_dir, const char* const argv0, char const* const temp_base, const size_t templen) {
+build_mount_point(char* mount_dir, const char* const arg0, char const* const temp_base, const size_t templen) {
     const size_t maxnamelen = 6;
 
     // when running for another AppImage, we should use that for building the mountpoint name instead
@@ -483,7 +483,7 @@ build_mount_point(char* mount_dir, const char* const argv0, char const* const te
     if (target_appimage != NULL) {
         path_basename = basename(target_appimage);
     } else {
-        path_basename = basename(argv0);
+        path_basename = basename(arg0);
     }
 
     size_t namelen = strlen(path_basename);
@@ -501,7 +501,7 @@ build_mount_point(char* mount_dir, const char* const argv0, char const* const te
 
 int main(int argc, char *argv[]) {
     char runimage_path[PATH_MAX];
-    char argv0_path[PATH_MAX];
+    char arg0_path[PATH_MAX];
     char * arg;
 
     /* We might want to operate on a target appimage rather than this file itself,
@@ -512,10 +512,10 @@ int main(int argc, char *argv[]) {
      */
     if (getenv("TARGET_APPIMAGE") == NULL) {
         strcpy(runimage_path, "/proc/self/exe");
-        strcpy(argv0_path, argv[0]);
+        strcpy(arg0_path, argv[0]);
     } else {
         strcpy(runimage_path, getenv("TARGET_APPIMAGE"));
-        strcpy(argv0_path, getenv("TARGET_APPIMAGE"));
+        strcpy(arg0_path, getenv("TARGET_APPIMAGE"));
 
 #ifdef ENABLE_SETPROCTITLE
         // load libbsd dynamically to change proc title
@@ -612,7 +612,7 @@ int main(int argc, char *argv[]) {
             pattern = argv[2];
         } else {
             fprintf(stderr, "Unexpected argument count: %d\n", argc - 1);
-            fprintf(stderr, "Usage: %s --runtime-extract [<prefix>]\n", argv0_path);
+            fprintf(stderr, "Usage: %s --runtime-extract [<prefix>]\n", arg0_path);
             exit(1);
         }
 
@@ -880,7 +880,7 @@ int main(int argc, char *argv[]) {
 
         /* Setting some environment variables that the app "inside" might use */
         setenv( "RUNIMAGE", fullpath, 1 );
-        setenv( "ARGV0", argv0_path, 1 );
+        setenv( "ARG0", arg0_path, 1 );
         setenv( "RUNDIR", mount_dir, 1 );
         setenv( "RUNOFFSET", sfs_offset, 1 );
 
