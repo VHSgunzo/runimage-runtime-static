@@ -1,0 +1,410 @@
+name: ⚙️ Build runimage-runtime-static 📦
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * 0" #At 00:00 UTC on Sunday every Week
+  
+#------------------------------------------------------------------------------------#
+jobs:
+    build-x86_64-Linux:
+      name: Build runimage-runtime-static (x86_64-Linux)
+      runs-on: ubuntu-latest
+      permissions:
+        contents: write
+      
+      steps:
+        - name: Checkout repository
+          uses: actions/checkout@v4
+          with:
+            path: main
+            filter: "blob:none" #https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/
+  
+        - name: Install CoreUtils & Deps
+          run: |
+            #presets
+            set -x ; set +e
+            #-------------#     
+            export DEBIAN_FRONTEND="noninteractive"
+            sudo apt update -y -qq
+            sudo apt install 7zip b3sum bc binutils binutils-aarch64-linux-gnu coreutils curl dos2unix fdupes jq moreutils wget -y -qq
+            sudo apt-get install apt-transport-https apt-utils ca-certificates binutils binutils-aarch64-linux-gnu coreutils dos2unix fdupes gnupg2 jq moreutils p7zip-full rename rsync software-properties-common texinfo tmux upx util-linux wget -y -qq 2>/dev/null ; sudo apt-get update -y 2>/dev/null
+            #Do again, sometimes fails
+            sudo apt install 7zip b3sum bc binutils binutils-aarch64-linux-gnu coreutils curl dos2unix fdupes jq moreutils wget -y -qq
+            sudo apt-get install apt-transport-https apt-utils ca-certificates binutils binutils-aarch64-linux-gnu coreutils dos2unix fdupes gnupg2 jq moreutils p7zip-full rename rsync software-properties-common texinfo tmux upx util-linux wget -y -qq2>/dev/null ; sudo apt-get update -y 2>/dev/null
+            #7z
+            sudo curl -qfsSL "https://bin.ajam.dev/$(uname -m)/7z" -o "/usr/bin/7z" && sudo cp --force "/usr/bin/7z" "/usr/local/bin/7z"
+            sudo chmod +x "/usr/bin/7z" "/usr/local/bin/7z"
+            #upx
+            sudo curl -qfsSL "https://bin.ajam.dev/$(uname -m)/upx" -o "/usr/bin/upx" && sudo cp --force "/usr/bin/upx" "/usr/local/bin/upx"
+            sudo chmod +x "/usr/bin/upx" "/usr/local/bin/upx"
+          continue-on-error: true
+
+        - name: Setup Env
+          run: |
+            #presets
+            set -x ; set +e
+            #-------------#
+            ##tmp
+            SYSTMP="$(dirname $(mktemp -u))" && export SYSTMP="${SYSTMP}"
+            echo "SYSTMP=${SYSTMP}" >> "$GITHUB_ENV"
+            ##Artifacts
+            #ARTIFACTS="${SYSTMP}/ARTIFACTS-$(uname -m)-$(uname -s)" && export "ARTIFACTS=${ARTIFACTS}"
+            ARTIFACTS="${SYSTMP}/ARTIFACTS-x86_64-Linux" && export "ARTIFACTS=${ARTIFACTS}"
+            echo "ARTIFACTS=${ARTIFACTS}" >> "$GITHUB_ENV"
+            ##User-Agent
+            USER_AGENT="$(curl -qfsSL 'https://pub.ajam.dev/repos/Azathothas/Wordlists/Misc/User-Agents/ua_chrome_macos_latest.txt')" && export USER_AGENT="$USER_AGENT"
+            echo "USER_AGENT=$USER_AGENT" >> "$GITHUB_ENV"
+          continue-on-error: true
+  
+        - name: Set up QEMU
+          uses: docker/setup-qemu-action@v3
+          continue-on-error: true
+        - name: Set up Docker Buildx
+          uses: docker/setup-buildx-action@v3
+          continue-on-error: true
+
+        - name: Build Binaries (x86_64-Linux)
+          run: |
+            #presets
+            set -x ; set +e
+            #-------------#
+            #Build 
+            pushd "$(mktemp -d)" >/dev/null 2>&1
+            docker stop "ubuntu-builder" 2>/dev/null ; docker rm "ubuntu-builder" 2>/dev/null
+            docker run --platform="linux/amd64" --privileged --net="host" --name "ubuntu-builder" "ubuntu:jammy" \
+            bash -c '
+            apt update -y -qq && apt install binutils coreutils curl git jq moreutils util-linux rsync sudo wget -y -qq
+            sudo curl -qfsSL "https://bin.ajam.dev/$(uname -m)/7z" -o "/usr/bin/7z" && sudo cp --force "/usr/bin/7z" "/usr/local/bin/7z"
+            sudo chmod +x "/usr/bin/7z" "/usr/local/bin/7z"
+            sudo curl -qfsSL "https://bin.ajam.dev/$(uname -m)/upx" -o "/usr/bin/upx" && sudo cp --force "/usr/bin/upx" "/usr/local/bin/upx"
+            sudo chmod +x "/usr/bin/upx" "/usr/local/bin/upx"
+            export DEBIAN_FRONTEND="noninteractive"
+            echo "debconf debconf/frontend select Noninteractive" | debconf-set-selections
+            rm -rf "/build-bins" 2>/dev/null ; mkdir -p "/build-bins" && pushd "$(mktemp -d)" >/dev/null 2>&1
+            git clone --filter "blob:none" "https://github.com/VHSgunzo/runimage-runtime-static" && cd "./runimage-runtime-static"
+            "./build.sh"
+            find . -type f -name "*.xz" -exec tar -xf {} \;
+            find . -type d -name "*release*" ! -name "*.xz" -exec rsync -av --copy-links "{}/." "/build-bins/" \;
+            find "/build-bins/" -type f -name "*.sh" -delete 2>/dev/null
+            find "/build-bins/" -type f -exec strip --strip-debug --strip-dwo --strip-unneeded -R ".comment" -R ".gnu.version" --preserve-dates "{}" \; 2>/dev/null
+            find "/build-bins/" -type f -exec objcopy --remove-section=".note.gnu.build-id" "{}" \; 2>/dev/null
+            find "/build-bins/" -type f -exec bash -c '\''mv "$0" "${0}-$(uname -m)-$(uname -s)"'\'' {} \; 2>/dev/null
+            find "/build-bins/" -type f | xargs realpath | xargs -I {} upx --best "{}" -f --force-overwrite -o"{}.upx" -qq 2>/dev/null
+            popd >/dev/null 2>&1
+            '
+            #Copy
+            docker cp "ubuntu-builder:/build-bins/." "$(pwd)/"
+            find "." -maxdepth 1 -type f -exec sh -c 'file "{}"; du -sh "{}"' \;
+            sudo rsync -av --copy-links --exclude="*/" "./." "${ARTIFACTS}/"
+            sudo chown -R "$(whoami):$(whoami)" "${ARTIFACTS}" && chmod -R 755 "${ARTIFACTS}"
+            #End
+            docker stop "ubuntu-builder" 2>/dev/null ; docker rm "ubuntu-builder"
+            popd >/dev/null 2>&1
+          continue-on-error: true
+  
+        - name: Archive Binaries (.tar)
+          run: |
+            #presets
+            set -x ; set +e
+            #-------------#
+            if [ -d "${ARTIFACTS}" ] && [ "$(find "${ARTIFACTS}" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+               7z a -ttar -mx="9" -mmt="$(($(nproc)+1))" -bt "${ARTIFACTS}.tar" "${ARTIFACTS}" 2>/dev/null
+               sha256sum "${ARTIFACTS}.tar" && du -sh "${ARTIFACTS}.tar"
+               export HAS_RELEASE="TRUE"
+               echo "HAS_RELEASE=$HAS_RELEASE" >> "$GITHUB_ENV"
+            else
+               export HAS_RELEASE="FALSE"
+               echo "HAS_RELEASE=$HAS_RELEASE" >> "$GITHUB_ENV"
+                 exit 1
+              fi
+          continue-on-error: false
+  
+        - name: Upload_ARTIFACTS-x86_64-Linux
+          if: env.HAS_RELEASE == 'TRUE'
+          uses: actions/upload-artifact@v4
+          with:
+              name: ARTIFACTS-x86_64-Linux.tar
+              path: |
+                /tmp/ARTIFACTS-x86_64-Linux.tar
+#------------------------------------------------------------------------------------#
+    build-aarch64-Linux:
+        name: Build runimage-runtime-static (aarch64-Linux)
+        runs-on: ubuntu-latest
+        permissions:
+          contents: write
+
+        steps:
+          - name: Checkout repository
+            uses: actions/checkout@v4
+            with:
+              path: main
+              filter: "blob:none" #https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/
+    
+          - name: Setup Env
+            run: |
+              #presets
+              set -x ; set +e
+              #-------------#
+              ##tmp
+              SYSTMP="$(dirname $(mktemp -u))" && export SYSTMP="${SYSTMP}"
+              echo "SYSTMP=${SYSTMP}" >> "$GITHUB_ENV"
+              ##Artifacts
+              #ARTIFACTS="${SYSTMP}/ARTIFACTS-$(uname -m)-$(uname -s)" && export "ARTIFACTS=${ARTIFACTS}"
+              ARTIFACTS="${SYSTMP}/ARTIFACTS-aarch64-Linux" && export "ARTIFACTS=${ARTIFACTS}"
+              echo "ARTIFACTS=${ARTIFACTS}" >> "$GITHUB_ENV"
+              ##User-Agent
+              USER_AGENT="$(curl -qfsSL 'https://pub.ajam.dev/repos/Azathothas/Wordlists/Misc/User-Agents/ua_chrome_macos_latest.txt')" && export USER_AGENT="$USER_AGENT"
+              echo "USER_AGENT=$USER_AGENT" >> "$GITHUB_ENV"
+            continue-on-error: true
+
+          - name: Set up QEMU
+            uses: docker/setup-qemu-action@v3
+            continue-on-error: true
+          - name: Set up Docker Buildx
+            uses: docker/setup-buildx-action@v3
+            continue-on-error: true
+
+          - name: Install CoreUtils & Deps
+            run: |
+              #presets
+              set -x ; set +e
+              #-------------#     
+              export DEBIAN_FRONTEND="noninteractive"
+              sudo apt update -y -qq
+              sudo apt install 7zip b3sum bc binutils binutils-aarch64-linux-gnu coreutils curl dos2unix fdupes jq moreutils wget -y -qq
+              sudo apt-get install apt-transport-https apt-utils ca-certificates binutils binutils-aarch64-linux-gnu coreutils dos2unix fdupes gnupg2 jq moreutils p7zip-full rename rsync software-properties-common texinfo tmux upx util-linux wget -y -qq 2>/dev/null ; sudo apt-get update -y 2>/dev/null
+              #Do again, sometimes fails
+              sudo apt install 7zip b3sum bc binutils binutils-aarch64-linux-gnu coreutils curl dos2unix fdupes jq moreutils wget -y -qq
+              sudo apt-get install apt-transport-https apt-utils ca-certificates binutils binutils-aarch64-linux-gnu coreutils dos2unix fdupes gnupg2 jq moreutils p7zip-full rename rsync software-properties-common texinfo tmux upx util-linux wget -y -qq2>/dev/null ; sudo apt-get update -y 2>/dev/null
+              #7z
+              sudo curl -qfsSL "https://bin.ajam.dev/$(uname -m)/7z" -o "/usr/bin/7z" && sudo cp --force "/usr/bin/7z" "/usr/local/bin/7z"
+              sudo chmod +x "/usr/bin/7z" "/usr/local/bin/7z"
+              #upx
+              sudo curl -qfsSL "https://bin.ajam.dev/$(uname -m)/upx" -o "/usr/bin/upx" && sudo cp --force "/usr/bin/upx" "/usr/local/bin/upx"
+              sudo chmod +x "/usr/bin/upx" "/usr/local/bin/upx"
+            continue-on-error: true
+
+          - name: Build Binaries (aarch64-Linux)
+            run: |
+              #presets
+              set -x ; set +e
+              #-------------#
+              #Build 
+              pushd "$(mktemp -d)" >/dev/null 2>&1
+              docker stop "ubuntu-builder" 2>/dev/null ; docker rm "ubuntu-builder" 2>/dev/null
+              docker run --platform="linux/arm64" --privileged --net="host" --name "ubuntu-builder" "ubuntu:jammy" \
+              bash -c '
+              apt update -y -qq && apt install binutils coreutils curl git jq moreutils util-linux rsync sudo wget -y -qq
+              sudo curl -qfsSL "https://bin.ajam.dev/$(uname -m)/7z" -o "/usr/bin/7z" && sudo cp --force "/usr/bin/7z" "/usr/local/bin/7z"
+              sudo chmod +x "/usr/bin/7z" "/usr/local/bin/7z"
+              sudo curl -qfsSL "https://bin.ajam.dev/$(uname -m)/upx" -o "/usr/bin/upx" && sudo cp --force "/usr/bin/upx" "/usr/local/bin/upx"
+              sudo chmod +x "/usr/bin/upx" "/usr/local/bin/upx"
+              export DEBIAN_FRONTEND="noninteractive"
+              echo "debconf debconf/frontend select Noninteractive" | debconf-set-selections
+              rm -rf "/build-bins" 2>/dev/null ; mkdir -p "/build-bins" && pushd "$(mktemp -d)" >/dev/null 2>&1
+              git clone --filter "blob:none" "https://github.com/VHSgunzo/runimage-runtime-static" && cd "./runimage-runtime-static"
+              "./build.sh"
+              find . -type f -name "*.xz" -exec tar -xf {} \;
+              find . -type d -name "*release*" ! -name "*.xz" -exec rsync -av --copy-links "{}/." "/build-bins/" \;
+              find "/build-bins/" -type f -name "*.sh" -delete 2>/dev/null
+              find "/build-bins/" -type f -exec strip --strip-debug --strip-dwo --strip-unneeded -R ".comment" -R ".gnu.version" --preserve-dates "{}" \; 2>/dev/null
+              find "/build-bins/" -type f -exec objcopy --remove-section=".note.gnu.build-id" "{}" \; 2>/dev/null
+              find "/build-bins/" -type f -exec bash -c '\''mv "$0" "${0}-$(uname -m)-$(uname -s)"'\'' {} \; 2>/dev/null
+              find "/build-bins/" -type f | xargs realpath | xargs -I {} upx --best "{}" -f --force-overwrite -o"{}.upx" -qq 2>/dev/null
+              popd >/dev/null 2>&1
+              '
+              #Copy
+              docker cp "ubuntu-builder:/build-bins/." "$(pwd)/"
+              find "." -maxdepth 1 -type f -exec sh -c 'file "{}"; du -sh "{}"' \;
+              sudo rsync -av --copy-links --exclude="*/" "./." "${ARTIFACTS}/"
+              sudo chown -R "$(whoami):$(whoami)" "${ARTIFACTS}" && chmod -R 755 "${ARTIFACTS}"
+              #End
+              docker stop "ubuntu-builder" 2>/dev/null ; docker rm "ubuntu-builder"
+              popd >/dev/null 2>&1
+            continue-on-error: true
+
+          - name: Archive Binaries (.tar)
+            run: |
+              #presets
+              set -x ; set +e
+              #-------------#
+              if [ -d "${ARTIFACTS}" ] && [ "$(find "${ARTIFACTS}" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+                 7z a -ttar -mx="9" -mmt="$(($(nproc)+1))" -bt "${ARTIFACTS}.tar" "${ARTIFACTS}" 2>/dev/null
+                 sha256sum "${ARTIFACTS}.tar" && du -sh "${ARTIFACTS}.tar"
+                 export HAS_RELEASE="TRUE"
+                 echo "HAS_RELEASE=$HAS_RELEASE" >> "$GITHUB_ENV"
+              else
+                 export HAS_RELEASE="FALSE"
+                 echo "HAS_RELEASE=$HAS_RELEASE" >> "$GITHUB_ENV"
+                 exit 1
+              fi
+            continue-on-error: false
+    
+          - name: Upload_ARTIFACTS-aarch64-Linux
+            if: env.HAS_RELEASE == 'TRUE'
+            uses: actions/upload-artifact@v4
+            with:
+                name: ARTIFACTS-aarch64-Linux.tar
+                path: |
+                  /tmp/ARTIFACTS-aarch64-Linux.tar
+#------------------------------------------------------------------------------------#
+    create-release:
+      name: Create runimage-runtime-static Release
+      runs-on: ubuntu-latest
+      needs: [build-x86_64-Linux, build-aarch64-Linux]
+      permissions: write-all      
+      steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: main
+          filter: "blob:none"
+
+      - name: Install CoreUtils & Deps
+        run: |
+          #presets
+          set -x ; set +e
+          #-------------#     
+          export DEBIAN_FRONTEND="noninteractive"
+          sudo apt update -y -qq
+          sudo apt install 7zip b3sum bc binutils binutils-aarch64-linux-gnu coreutils curl dos2unix fdupes jq moreutils wget -y -qq
+          sudo apt-get install apt-transport-https apt-utils ca-certificates binutils binutils-aarch64-linux-gnu coreutils dos2unix fdupes gnupg2 jq moreutils p7zip-full rename rsync software-properties-common texinfo tmux upx util-linux wget -y -qq 2>/dev/null ; sudo apt-get update -y 2>/dev/null
+          #Do again, sometimes fails
+          sudo apt install 7zip b3sum bc binutils binutils-aarch64-linux-gnu coreutils curl dos2unix fdupes jq moreutils wget -y -qq
+          sudo apt-get install apt-transport-https apt-utils ca-certificates binutils binutils-aarch64-linux-gnu coreutils dos2unix fdupes gnupg2 jq moreutils p7zip-full rename rsync software-properties-common texinfo tmux upx util-linux wget -y -qq2>/dev/null ; sudo apt-get update -y 2>/dev/null
+          #7z
+          sudo curl -qfsSL "https://bin.ajam.dev/$(uname -m)/7z" -o "/usr/bin/7z" && sudo cp --force "/usr/bin/7z" "/usr/local/bin/7z"
+          sudo chmod +x "/usr/bin/7z" "/usr/local/bin/7z"
+          #upx
+          sudo curl -qfsSL "https://bin.ajam.dev/$(uname -m)/upx" -o "/usr/bin/upx" && sudo cp --force "/usr/bin/upx" "/usr/local/bin/upx"
+          sudo chmod +x "/usr/bin/upx" "/usr/local/bin/upx"
+        continue-on-error: true
+
+      - name: Prepare Release
+        run: |
+          #presets
+          set -x ; set +e
+          #-------------#
+          SYSTMP="$(dirname $(mktemp -u))" && export SYSTMP="${SYSTMP}"
+          echo "SYSTMP=${SYSTMP}" >> "$GITHUB_ENV"
+          mkdir -p "/tmp/RELEASES"
+          pushd "$(mktemp -d)" >/dev/null 2>&1
+          git clone --filter "blob:none" "https://github.com/VHSgunzo/runimage-runtime-static" && cd "./runimage-runtime-static"
+          PKG_VERSION="$(git tag --sort="-v:refname" | head -n 1)" && export PKG_VERSION="${PKG_VERSION}"
+          echo "PKG_VERSION=${PKG_VERSION}" >> "$GITHUB_ENV"
+          popd >/dev/null 2>&1
+        continue-on-error: true
+        
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/RELEASES
+
+      - name: Extract Artifacts
+        run: |
+          #presets
+          set -x ; set +e
+          #-------------#
+          ##list
+          cd "/tmp/RELEASES" && find "." -type f -name '*tar*' | xargs realpath
+          ##extract
+          cd "/tmp/RELEASES" && find "." -type f -name '*tar*' | xargs -I {} tar -xvf {}
+          ##ReAdd
+          find "." -type f -name '*aarch64-Linux*' ! -name '*.upx*' ! -name '*.tar' ! -name '*.xz' -print0 | xargs -0 tar --transform 's|.*/||' --transform 's/-aarch64-Linux//' -cvf "./aarch64-Linux.tar"
+          7z a -txz -mx="9" -mmt="$(($(nproc)+1))" -bt "./aarch64-Linux.tar.xz" "./aarch64-Linux.tar" 2>/dev/null
+          find "." -type f -name '*aarch64-Linux.upx*' ! -name '*.tar' ! -name '*.xz' -print0 | xargs -0 tar --transform 's|.*/||' --transform 's/-aarch64-Linux.upx//' -cvf "./aarch64-Linux.upx.tar"
+          7z a -txz -mx="9" -mmt="$(($(nproc)+1))" -bt "./aarch64-Linux.upx.tar.xz" "./aarch64-Linux.upx.tar" 2>/dev/null
+          find "." -type f -name '*x86_64-Linux*' ! -name '*.upx*' ! -name '*.tar' ! -name '*.xz' -print0 | xargs -0 tar --transform 's|.*/||' --transform 's/-x86_64-Linux//' -cvf "./x86_64-Linux.tar"
+          7z a -txz -mx="9" -mmt="$(($(nproc)+1))" -bt "./x86_64-Linux.tar.xz" "./x86_64-Linux.tar" 2>/dev/null
+          find "." -type f -name '*x86_64-Linux.upx*' ! -name '*.tar' ! -name '*.xz' -print0 | xargs -0 tar --transform 's|.*/||' --transform 's/-x86_64-Linux.upx//' -cvf "./x86_64-Linux.upx.tar"
+          7z a -txz -mx="9" -mmt="$(($(nproc)+1))" -bt "./x86_64-Linux.upx.tar.xz" "./x86_64-Linux.upx.tar" 2>/dev/null
+          ##VERSION
+          echo "${PKG_VERSION}" > "/tmp/RELEASES/VERSION.txt"
+          find "." -type f -name '*.txt' ! -name 'VERSION.txt' -delete
+          ##Move
+          find "." -type f ! -name '*.tar' ! -name '*.xz' -exec rsync -av --remove-source-files {} "./" 2>/dev/null \; 2>/dev/null
+          find "." -type d -empty -delete ; find "." -type f -name '*.sh' -delete
+          ##clean
+          find "./" -maxdepth 1 -type f | sort | grep -v -E '\.tar$|\.txt$|\.xz$' | xargs file | sort -u -o "./FILE.txt"
+          find "./" -maxdepth 1 -type f | sort | grep -v -E '\.tar$|\.txt$|\.xz$' | xargs sha256sum | sort -u -o "./SHA256SUM.txt"
+          ls . -lah
+        continue-on-error: true
+
+      - name: Get DateTime
+        run: |
+          #presets
+          set +x ; set +e
+          #-------------#        
+          #UTC
+          UTC_TIME="$(TZ='UTC' date +'%Y_%m_%d')"
+          echo "UTC_TIME=${UTC_TIME}" >> $GITHUB_ENV
+          #VERSION
+          PKG_VERSION=$(cat "/tmp/RELEASES/VERSION.txt")
+          echo "PKG_VERSION=${PKG_VERSION}" >> $GITHUB_ENV
+        continue-on-error: true
+
+      - name: Create Body for Release
+        run: |
+          #presets
+          set +x ; set +e
+          #-------------#
+          echo -e "" >> "/tmp/RELEASE_NOTE.md"
+          echo '---' >> "/tmp/RELEASE_NOTE.md"
+          echo '```console' >> "/tmp/RELEASE_NOTE.md"
+          echo -e "" >> "/tmp/RELEASE_NOTE.md"
+          echo -e "[+] --> Metadata (Version: ${PKG_VERSION})" >> "/tmp/RELEASE_NOTE.md"
+          echo -e "" >> "/tmp/RELEASE_NOTE.md"
+          cat "/tmp/RELEASES/FILE.txt" >> "/tmp/RELEASE_NOTE.md"
+          echo -e "" >> "/tmp/RELEASE_NOTE.md"
+          echo -e "[+] --> SHA256SUM" >> "/tmp/RELEASE_NOTE.md"
+          echo -e "" >> "/tmp/RELEASE_NOTE.md"
+          cat "/tmp/RELEASES/SHA256SUM.txt" >> "/tmp/RELEASE_NOTE.md"
+          echo -e '```\n' >> "/tmp/RELEASE_NOTE.md"
+          echo -e "" >> "/tmp/RELEASE_NOTE.md"
+        continue-on-error: true
+
+    #version
+      - name: Releaser
+        uses: softprops/action-gh-release@v2.0.8
+        with:
+          name: "runimage-runtime-static ${{ env.PKG_VERSION}}"
+          tag_name: "${{ env.PKG_VERSION }}"
+          #tag_name: "runimage-runtime-static_${{ env.PKG_VERSION }}_${{ env.UTC_TIME }}"
+          prerelease: false
+          draft: false
+          generate_release_notes: false
+          body_path: "/tmp/RELEASE_NOTE.md"
+          files: |
+            /tmp/RELEASES/*
+        continue-on-error: true
+
+    #continuous
+      - name: Releaser
+        uses: softprops/action-gh-release@v2.0.8
+        with:
+          name: "runimage-runtime-static-@latest"
+          tag_name: "continuous"
+          prerelease: true
+          draft: false
+          generate_release_notes: false
+          body_path: "/tmp/RELEASE_NOTE.md"
+          files: |
+            /tmp/RELEASES/*
+        continue-on-error: true
+        
+    #Snapshot
+      - name: Releaser
+        uses: softprops/action-gh-release@v2.0.8
+        with:
+          name: "Snapshot (${{ env.PKG_VERSION}}) ${{ env.UTC_TIME }} "
+          tag_name: "${{ env.UTC_TIME }}"
+          prerelease: false
+          draft: false
+          generate_release_notes: false
+          make_latest: false
+          body_path: "/tmp/RELEASE_NOTE.md"
+          files: |
+            /tmp/RELEASES/*
+            /tmp/PKGS/*
+        continue-on-error: true        
+#------------------------------------------------------------------------------------#
