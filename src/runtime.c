@@ -1,5 +1,5 @@
 #ident "Runtime for RunImage by VHSgunzo, vhsgunzo.github.io"
-#define RUNTIME_VERSION "0.4.9"
+#define RUNTIME_VERSION "0.5.1"
 
 #define _GNU_SOURCE
 
