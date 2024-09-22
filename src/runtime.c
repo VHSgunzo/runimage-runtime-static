@@ -38,6 +38,7 @@
  * error, see SYSTEM(3POSIX).
  */
 #define EXIT_EXECERROR  127     /* Execution error exit status.  */
+#define FSMNT_DIR "/tmp/.fsmnt"
 
 //#include "notify.c"
 extern int notify(char *title, char *body, int timeout);
@@ -476,15 +477,8 @@ void
 build_mount_point(char* mount_dir, const char* const arg0, char const* const temp_base, const size_t templen) {
     const size_t maxnamelen = 6;
 
-    // when running for another AppImage, we should use that for building the mountpoint name instead
-    char* target_appimage = getenv("TARGET_APPIMAGE");
-
     char* path_basename;
-    if (target_appimage != NULL) {
-        path_basename = basename(target_appimage);
-    } else {
-        path_basename = basename(arg0);
-    }
+    path_basename = basename(arg0);
 
     size_t namelen = strlen(path_basename);
     // limit length of tempdir name
@@ -499,6 +493,73 @@ build_mount_point(char* mount_dir, const char* const arg0, char const* const tem
     mount_dir[templen + 1 + namelen + 6] = 0; // null terminate destination
 }
 
+char *find_binary(const char *name) {
+    char *path = getenv("PATH");
+    char *token;
+    char buffer[PATH_MAX];
+    
+    if (path == NULL) {
+        fprintf(stderr, "PATH environment variable is not set\n");
+        return NULL;
+    }
+
+    char *path_copy = strdup(path);
+    if (path_copy == NULL) {
+        perror("strdup");
+        return NULL;
+    }
+
+    token = strtok(path_copy, ":");
+    while (token != NULL) {
+        snprintf(buffer, sizeof(buffer), "%s/%s", token, name);
+        
+        if (access(buffer, X_OK) == 0) {
+            free(path_copy);
+            return strdup(buffer); 
+        }
+
+        token = strtok(NULL, ":");
+    }
+
+    free(path_copy); 
+    return NULL; 
+}
+
+void add_to_path(const char *new_dir) {
+    char *old_path = getenv("PATH");
+    if (!old_path) {
+        if (setenv("PATH", new_dir, 1) == -1) {
+            perror("Error setenv PATH");
+        }
+        return;
+    }
+
+    size_t new_path_len = strlen(old_path) + strlen(new_dir) + 2;
+    char *new_path = malloc(new_path_len);
+    if (!new_path) {
+        perror("Error malloc new_path");
+        exit(EXIT_FAILURE);
+    }
+
+    strcpy(new_path, old_path);
+    strcat(new_path, ":");
+    strcat(new_path, new_dir);
+
+    if (setenv("PATH", new_path, 1) == -1) {
+        perror("Error setenv PATH");
+    }
+
+    free(new_path);
+}
+
+int is_dir_exists(const char *path) {
+    struct stat statbuf;
+    if (stat(path, &statbuf) != 0) {
+        return 0;
+    }
+    return S_ISDIR(statbuf.st_mode);
+}
+
 int main(int argc, char *argv[]) {
     char runimage_path[PATH_MAX];
     char arg0_path[PATH_MAX];
@@ -510,47 +571,9 @@ int main(int argc, char *argv[]) {
      * change any time. Do not rely on it being present. We might even limit this
      * functionality specifically for builds used by appimaged.
      */
-    if (getenv("TARGET_APPIMAGE") == NULL) {
-        strcpy(runimage_path, "/proc/self/exe");
-        strcpy(arg0_path, argv[0]);
-    } else {
-        strcpy(runimage_path, getenv("TARGET_APPIMAGE"));
-        strcpy(arg0_path, getenv("TARGET_APPIMAGE"));
-
-#ifdef ENABLE_SETPROCTITLE
-        // load libbsd dynamically to change proc title
-        // this is an optional feature, therefore we don't hard require it
-        void* libbsd = dlopen("libbsd.so", RTLD_NOW);
-
-        if (libbsd != NULL) {
-            // clear error state
-            dlerror();
-
-            // try to load the two required symbols
-            void (*setproctitle_init)(int, char**, char**) = dlsym(libbsd, "setproctitle_init");
-
-            char* error;
-
-            if ((error = dlerror()) == NULL) {
-                void (*setproctitle)(const char*, char*) = dlsym(libbsd, "setproctitle");
-
-                if (dlerror() == NULL) {
-                    char buffer[1024];
-                    strcpy(buffer, getenv("TARGET_APPIMAGE"));
-                    for (int i = 1; i < argc; i++) {
-                        strcat(buffer, " ");
-                        strcat(buffer, argv[i]);
-                    }
-
-                    (*setproctitle_init)(argc, argv, environ);
-                    (*setproctitle)("%s", buffer);
-                }
-            }
-
-            dlclose(libbsd);
-        }
-#endif
-    }
+    
+    strcpy(runimage_path, "/proc/self/exe");
+    strcpy(arg0_path, argv[0]);
 
     // temporary directories are required in a few places
     // therefore we implement the detection of the temp base dir at the top of the code to avoid redundancy
@@ -626,23 +649,13 @@ int main(int argc, char *argv[]) {
     // calculate full path of AppImage
     char fullpath[PATH_MAX];
 
-    if(getenv("TARGET_APPIMAGE") == NULL) {
-        // If we are operating on this file itself
-        ssize_t len = readlink(runimage_path, fullpath, sizeof(fullpath));
-        if (len < 0) {
-            perror("Failed to obtain absolute path");
-            exit(EXIT_EXECERROR);
-        }
-        fullpath[len] = '\0';
-    } else {
-        char* abspath = realpath(runimage_path, NULL);
-        if (abspath == NULL) {
-            perror("Failed to obtain absolute path");
-            exit(EXIT_EXECERROR);
-        }
-        strcpy(fullpath, abspath);
-        free(abspath);
+    // If we are operating on this file itself
+    ssize_t len = readlink(runimage_path, fullpath, sizeof(fullpath));
+    if (len < 0) {
+        perror("Failed to obtain absolute path");
+        exit(EXIT_EXECERROR);
     }
+    fullpath[len] = '\0';
 
     if (getenv("RUNTIME_EXTRACT_AND_RUN") != NULL || (arg && strcmp(arg, "runtime-extract-and-run") == 0)) {
         char* hexlified_digest = NULL;
@@ -747,8 +760,34 @@ int main(int argc, char *argv[]) {
         fprintf(stderr,"--%s is not yet implemented in version %s\n", arg, RUNTIME_VERSION);
         exit(1);
     }
+    
+    if (is_dir_exists(FSMNT_DIR)) {
+        add_to_path(FSMNT_DIR);
+    }
+    char *fusermount_path = find_binary("fusermount");
+    if (fusermount_path == NULL) {
+        fusermount_path = find_binary("fusermount3");
+        if (fusermount_path == NULL) {
+            fprintf(stderr, "fusermount and fusermount3 not found\n");
+        } else {
+            if (!is_dir_exists(FSMNT_DIR)) {
+                if (mkdir(FSMNT_DIR, 0755) == -1) {
+                    fprintf(stderr, "Failed to create directory %s: %s\n", FSMNT_DIR, strerror(errno));
+                    exit(1);
+                }
+            }
+            char fsmntlink_path[PATH_MAX];
+            snprintf(fsmntlink_path, sizeof(fsmntlink_path), "%s/fusermount", FSMNT_DIR);
+            remove(fsmntlink_path);
+            if (symlink(fusermount_path, fsmntlink_path) == -1) {
+                fprintf(stderr, "Failed to create symlink: %s\n", strerror(errno));
+                exit(1);
+            }
+            add_to_path(FSMNT_DIR);
+        }
+    }
 
-    if (access ("/dev/fuse", F_OK) < 0)        /* exit if libfuse cannot be used */
+    if (access ("/dev/fuse", F_OK) < 0 || fusermount_path == NULL)        /* exit if libfuse cannot be used */
       {
         dprintf (2, "%s: failed to utilize FUSE during startup\n", argv[0]);
         char *title = "Cannot mount RunImage, please check your FUSE setup.";
@@ -759,6 +798,8 @@ int main(int argc, char *argv[]) {
         notify(title, body, 0); // 3 seconds timeout
         exit (-1);
       }
+    
+    free(fusermount_path);
 
     int dir_fd, res;
 
