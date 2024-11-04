@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches:
+    - action
+    tags:
+    - '*'
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Build
+        run: |
+            sudo bash -c "${{ github.workspace }}/build.sh"
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: runimage-runtime-static-v*.tar.xz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
